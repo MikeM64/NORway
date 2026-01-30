@@ -13,6 +13,8 @@ project(NORway_rp2350b)
 # initialize the Raspberry Pi Pico SDK
 pico_sdk_init()
 
+add_compile_options(-Werror -Wall)
+
 # rest of your project
 add_executable(NORway_rp2350b
     main.c
@@ -20,6 +22,10 @@ add_executable(NORway_rp2350b
 
 # Add pico_stdlib library which aggregates commonly used features
 target_link_libraries(NORway_rp2350b pico_stdlib)
+
+# Setup SDK features
+pico_enable_stdio_usb(NORway_rp2350b 1)
+pico_enable_stdio_uart(NORway_rp2350b 0)
 
 # create map/bin/hex/uf2 file in addition to ELF.
 pico_add_extra_outputs(NORway_rp2350b)
