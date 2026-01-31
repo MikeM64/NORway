@@ -174,6 +174,18 @@ int usb_serial_getchar(void)
 }
 
 
+int usb_serial_getbuf(char *input_buf, size_t input_buf_len)
+{
+    int rc;
+    absolute_time_t end_time;
+
+    end_time = delayed_by_us(get_absolute_time(), 100000);
+    rc = stdio_get_until(input_buf, input_buf_len, end_time);
+
+    return (rc);
+}
+
+
 size_t usb_serial_write(char *buf, size_t len)
 {
     return stdio_put_string(
@@ -207,26 +219,25 @@ void speedtest_send()
 
 void speedtest_receive()
 {
-    int16_t in_data;
-    uint8_t buf_write[BSS_4];
-    uint16_t i = 0;
+    int rc;
+    char buf_write[BSS_4];
+    int i = 0;
 
-    while (i < BSS_4) { //receive buffer data
-        in_data = usb_serial_getchar();
-        if (in_data != PICO_ERROR_TIMEOUT)
-            buf_write[i++] = in_data;
-        else {
+    while (i < BSS_4) {
+        rc = usb_serial_getbuf(&buf_write[i], 128);
+        if (rc == PICO_ERROR_TIMEOUT) {
             usb_serial_putchar('T');
             return;
         }
-    }
-    if (i != BSS_4) {   //if receiving timeout, prepare to send FAIL!
-        usb_serial_putchar('R');
-        return;
-    }
-    usb_serial_putchar('K');
 
-    (void)buf_write;
+        i += rc;
+    }
+
+    if (i != BSS_4) {
+        usb_serial_putchar('R');
+    } else {
+        usb_serial_putchar('K');
+    }
 }
 
 
