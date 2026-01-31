@@ -372,6 +372,48 @@ int16_t usb_serial_getchar(void)
 	return c;
 }
 
+// reads up to num_bytes into the specified buffer, or -1 if nothing received
+int16_t usb_serial_getbytes(uint8_t *buf, uint8_t num_bytes)
+{
+	uint8_t c, intr_state;
+	uint8_t i = 0;
+
+	// interrupts are disabled so these functions can be
+	// used from the main program or interrupt context,
+	// even both in the same program!
+	intr_state = SREG;
+	cli();
+	if (!usb_configuration) {
+		SREG = intr_state;
+		return -1;
+	}
+	UENUM = CDC_RX_ENDPOINT;
+	retry:
+	c = UEINTX;
+	if (!(c & (1<<RWAL))) {
+		// no data in buffer
+		if (c & (1<<RXOUTI)) {
+			UEINTX = 0x6B;
+			goto retry;
+		}	
+		SREG = intr_state;
+		return -1;
+	}
+	// take one byte out of the buffer
+	next_byte:
+	*buf++ = UEDATX;
+	i++;
+	// if buffer completely used, release it
+	if (!(UEINTX & (1<<RWAL))) {
+		UEINTX = 0x6B;
+	} else if (i < num_bytes) {
+		// If more bytes are left, copy them out too
+		goto next_byte;
+	}
+	SREG = intr_state;
+	return i;
+}
+
 // number of bytes available in the receive buffer
 uint8_t usb_serial_available(void)
 {

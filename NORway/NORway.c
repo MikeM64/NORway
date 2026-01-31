@@ -16,6 +16,8 @@ see file COPYING or http://www.gnu.org/licenses/old-licenses/gpl-2.0.txt
 
 #define CPU_PRESCALE(n)	(CLKPR = 0x80, CLKPR = (n))
 
+#define MIN(a, b) ((a < b) ? (a) : (b))
+
 // Define data ports
 #define DATA1_PORT	PORTD
 #define DATA1_PIN	PIND
@@ -176,8 +178,12 @@ uint8_t state_waiting2(uint8_t do_increment)
 
 uint8_t state_byte()
 {
-	return  ((CONT_PIN & (1<<CONT_TRI)) ? 0x20 : 0) | ((CONT_PIN & (1<<CONT_RESET)) ? 0x10 : 0) | ((CONT_PIN & (1<<CONT_RYBY)) ? 0x08 : 0) |
-			((CONT_PIN & (1<<CONT_CE)) ? 0x04 : 0) | ((CONT_PIN & (1<<CONT_WE)) ? 0x02 : 0) | ((CONT_PIN & (1<<CONT_OE)) ? 0x01 : 0);
+	return  ((CONT_PIN & (1<<CONT_TRI)) ? 0x20 : 0) |
+			((CONT_PIN & (1<<CONT_RESET)) ? 0x10 : 0) |
+			((CONT_PIN & (1<<CONT_RYBY)) ? 0x08 : 0) |
+			((CONT_PIN & (1<<CONT_CE)) ? 0x04 : 0) |
+			((CONT_PIN & (1<<CONT_WE)) ? 0x02 : 0) |
+			((CONT_PIN & (1<<CONT_OE)) ? 0x01 : 0);
 }
 
 void bootloader()
@@ -201,10 +207,26 @@ void bootloader()
 // pure serial receive takes 120secs for 16MB
 void speedtest_receive()
 {
+#if 0
 	int16_t in_data;
+#endif
 	uint8_t buf_write[BSS_4];
-	uint16_t i = 0;
-	
+	uint16_t i = 0, rc;
+	uint8_t bytes_to_read;
+
+	i = 0;
+	while (i < BSS_4) {
+		bytes_to_read = MIN(8, BSS_4-i);
+		rc = usb_serial_getbytes(&buf_write[i], bytes_to_read);
+		if (rc != -1) {
+			i += rc;
+		} else {
+			usb_serial_putchar('T');
+			return;
+		}
+	}
+
+#if 0
 	while (i < BSS_4) {	//receive buffer data
 		if ((in_data = usb_serial_getchar()) != -1)
 			buf_write[i++] = in_data;
@@ -213,6 +235,7 @@ void speedtest_receive()
 			return;
 		}
 	}
+#endif
 	if (i != BSS_4) {	//if receiving timeout, prepare to send FAIL!
 		usb_serial_putchar('R');
 		return;
@@ -228,8 +251,10 @@ void speedtest_send()
 	
 	addr = buf_ix = 0;
 	while (1) {
-		buf_read[buf_ix++] = buf_ix;
-		buf_read[buf_ix++] = buf_ix;
+		buf_read[buf_ix] = buf_ix;
+		buf_ix++;
+		buf_read[buf_ix] = buf_ix;
+		buf_ix++;
 		if (buf_ix == 64) {
 			usb_serial_write(buf_read, buf_ix);
 			buf_ix = 0;
@@ -373,10 +398,10 @@ int16_t fade_led_wait_for_cmd(void)
 int main(void)
 {
 	int16_t in_data;
-	uint16_t addr, i;
+	uint16_t addr, i, rc;
 	uint32_t bss;
 	uint8_t vaddr1, vaddr2, vaddr3;
-	uint8_t state, cycle, tx_data, tx_wr, buf_ix, do_increment, do_verify, offset_2nddie;
+	uint8_t state, cycle, tx_data, tx_wr, buf_ix, do_increment, do_verify, offset_2nddie, bytes_to_read;
 	uint8_t buf_read[64];
 	uint8_t buf_write[BSS_4];
 	uint8_t led_state = 0;
@@ -480,12 +505,12 @@ int main(void)
 						else
 							releaseports();
 					} */
-					/* else if (in_data == 12) {		//8'b00001101: SPEEDTEST_READ
+					else if (in_data == 12) {		//8'b00001101: SPEEDTEST_READ
 						speedtest_send();
 					}
 					else if (in_data == 13) {		//8'b00001100: SPEEDTEST_WRITE
 						speedtest_receive();
-					} */
+					}
 					else if ((in_data>>1)==6) {		//8'b0000110z: VERIFY
 						do_verify = (in_data & 1);
 					}
@@ -632,12 +657,24 @@ int main(void)
 				led_state ^= 255;
 				SET_LED_BRIGHTNESS(led_state);
 				
+				i = 0;
+				while (i < BSS_4) {
+					bytes_to_read = MIN(8, BSS_4-i);
+					rc = usb_serial_getbytes(&buf_write[i], bytes_to_read);
+					if (rc != -1) {
+						i += rc;
+					} else {
+						break;
+					}
+				}
+#if 0
 				for (i = 0; i < BSS_4; i++) {	//receive buffer data
 					if ((in_data = usb_serial_getchar()) != -1)
 						buf_write[i] = in_data;
 					else
 						break;
 				}
+#endif
 				if (i < BSS_4) {	//if receiving timeout, prepare to send FAIL!
 					tx_data = 'R';
 					tx_wr = 1;
@@ -687,13 +724,26 @@ int main(void)
 
 				led_state ^= 255;
 				SET_LED_BRIGHTNESS(led_state);
-				
+
+				i = 0;
+				while (i < BSS_4) {
+					bytes_to_read = MIN(8, BSS_4-i);
+					rc = usb_serial_getbytes(&buf_write[i], bytes_to_read);
+					if (rc != -1) {
+						i += rc;
+					} else {
+						break;
+					}
+				}
+
+#if 0
 				for (i = 0; i < BSS_4; i++) {	//receive buffer data
 					if ((in_data = usb_serial_getchar()) != -1)
 						buf_write[i] = in_data;
 					else
 						break;
 				}
+#endif
 
 				if (i < BSS_4) {	//if receiving timeout, prepare to send FAIL!
 					tx_data = 'R';
@@ -753,13 +803,27 @@ int main(void)
 
 				led_state ^= 255;
 				SET_LED_BRIGHTNESS(led_state);
-				
+
+				i = 0;
+				while (i < BSS_4) {
+					bytes_to_read = MIN(8, BSS_4-i);
+					rc = usb_serial_getbytes(&buf_write[i], bytes_to_read);
+					if (rc != -1) {
+						i += rc;
+					} else {
+						break;
+					}
+				}
+
+#if 0
 				for (i = 0; i < BSS_4; i++) {	//receive buffer data
 					if ((in_data = usb_serial_getchar()) != -1)
 						buf_write[i] = in_data;
 					else
 						break;
 				}
+#endif
+
 				if (i < BSS_4) {	//if receiving timeout, prepare to send FAIL!
 					tx_data = 'R';
 					tx_wr = 1;
