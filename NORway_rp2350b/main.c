@@ -74,10 +74,10 @@ enum external_commands_e {
     CMD_PING1,
     CMD_PING2,
     CMD_BOOTLOADER,
-    CMD_TRISTATE_DISABLE = 0x6,
-    CMD_TRISTATE_ENABLE = 0x7,
-    CMD_RESET_ENABLE = 0x8,
-    CMD_RESET_DISABLE = 0x9,
+    CMD_RELEASE_PORTS = 0x6,
+    CMD_INIT_PORTS = 0x7,
+    CMD_RESET_DISABLE = 0x8,
+    CMD_RESET_ENABLE = 0x9,
     CMD_SPEEDTEST_READ = 0x0c,
     CMD_SPEEDTEST_WRITE = 0x0d,
     CMD_READ_BSS_4 = 0x10,
@@ -441,27 +441,32 @@ enum fsm_states_e run_idle_state(void)
         case CMD_READ_BSS_128:
             next_state = S_READING_BSS_128;
             break;
-        case CMD_TRISTATE_ENABLE:
+        case CMD_INIT_PORTS:
             init_pins();
             break;
-        case CMD_TRISTATE_DISABLE:
+        case CMD_RELEASE_PORTS:
             release_pins();
             break;
         case CMD_RESET_ENABLE:
-            RESET_HIGH();
-            break;
-        case CMD_RESET_DISABLE:
             RESET_LOW();
             break;
+        case CMD_RESET_DISABLE:
+            RESET_HIGH();
+            break;
         default:
-            if (rc & 0x10) {
+            if ((rc >> 3) == 2) {
                 next_state = S_READING_BSS_WORD;
-                break;
-            } else if (rc & 0x80) {
+            } else if ((rc >> 6) == 1) {
+                /*
+                 * Delay - The teensy implementation would loop
+                 * through the main FSM loop for as many iterations
+                 * as sent. For the pico, 1 "cycle" == 1us.
+                 */
+                sleep_us(rc & 0x3f);
+            } else if ((rc >> 7) == 1) {
                 /* Receive address byte 3 */
                 update_address3((rc << 1) >> 1);
                 next_state = S_ADDR2;
-                break;
             }
             break;
         }
