@@ -76,6 +76,8 @@ enum external_commands_e {
     CMD_BOOTLOADER,
     CMD_TRISTATE_DISABLE = 0x6,
     CMD_TRISTATE_ENABLE = 0x7,
+    CMD_RESET_ENABLE = 0x8,
+    CMD_RESET_DISABLE = 0x9,
     CMD_SPEEDTEST_READ = 0x0c,
     CMD_SPEEDTEST_WRITE = 0x0d,
     CMD_READ_BSS_4 = 0x10,
@@ -222,6 +224,18 @@ void OE_LOW(void)
 void OE_HIGH(void)
 {
     gpio_set_mask64(OE_PIN_MASK);
+}
+
+
+void RESET_LOW(void)
+{
+    gpio_clr_mask64(RESET_PIN_MASK);
+}
+
+
+void RESET_HIGH(void)
+{
+    gpio_set_mask64(RESET_PIN_MASK);
 }
 
 
@@ -432,6 +446,12 @@ enum fsm_states_e run_idle_state(void)
             break;
         case CMD_TRISTATE_DISABLE:
             release_pins();
+            break;
+        case CMD_RESET_ENABLE:
+            RESET_HIGH();
+            break;
+        case CMD_RESET_DISABLE:
+            RESET_LOW();
             break;
         default:
             if (rc & 0x10) {
