@@ -14,7 +14,9 @@ see file COPYING or http://www.gnu.org/licenses/old-licenses/gpl-2.0.txt
 
 #include <stdio.h>
 #include "pico/stdlib.h"
+
 #include "hardware/gpio.h"
+#include "hardware/structs/systick.h"
 #include "pico/bootrom.h"
 
 #include "tusb.h"
@@ -72,6 +74,8 @@ enum external_commands_e {
     CMD_PING1,
     CMD_PING2,
     CMD_BOOTLOADER,
+    CMD_TRISTATE_DISABLE = 0x6,
+    CMD_TRISTATE_ENABLE = 0x7,
     CMD_SPEEDTEST_READ = 0x0c,
     CMD_SPEEDTEST_WRITE = 0x0d,
     CMD_READ_BSS_4 = 0x10,
@@ -93,7 +97,7 @@ enum external_commands_e {
 #define DELAY_100_NS()  (systick_delay(13))
 
 
-void systick_timer_init(void);
+void systick_timer_init(void)
 {
     // the clock is set to 125 MHz => 1 tick == 8 ns
     // init SysTick timer
@@ -422,6 +426,12 @@ enum fsm_states_e run_idle_state(void)
             break;
         case CMD_READ_BSS_128:
             next_state = S_READING_BSS_128;
+            break;
+        case CMD_TRISTATE_ENABLE:
+            init_pins();
+            break;
+        case CMD_TRISTATE_DISABLE:
+            release_pins();
             break;
         default:
             if (rc & 0x10) {
