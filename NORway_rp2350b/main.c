@@ -23,15 +23,23 @@ see file COPYING or http://www.gnu.org/licenses/old-licenses/gpl-2.0.txt
 #define ADDRESS_PIN_MASK    (0x3FFFFFull)
 
 /* GPIO 22 though 38 are reserved for data lines */
+#define DATA_PIN_SHIFT      (22)
 #define DATA_PIN_MASK       (0x3FFFC00000ull)
 
 /* GPIO 39 through 44 are for control lines */
-#define RYBY_PIN_MASK       (1ull << 39)
-#define TRISTATE_PIN_MASK   (1ull << 40)
-#define CE_PIN_MASK         (1ull << 41)
-#define WE_PIN_MASK         (1ull << 42)
-#define OE_PIN_MASK         (1ull << 43)
-#define RESET_PIN_MASK      (1ull << 44)
+#define RYBY_PIN            (39)
+#define TRISTATE_PIN        (40)
+#define CE_PIN              (41)
+#define WE_PIN              (42)
+#define OE_PIN              (43)
+#define RESET_PIN           (44)
+
+#define RYBY_PIN_MASK       (1ull << RYBY_PIN)
+#define TRISTATE_PIN_MASK   (1ull << TRISTATE_PIN)
+#define CE_PIN_MASK         (1ull << CE_PIN)
+#define WE_PIN_MASK         (1ull << WE_PIN)
+#define OE_PIN_MASK         (1ull << OE_PIN)
+#define RESET_PIN_MASK      (1ull << RESET_PIN)
 
 #define CONTROL_PIN_MASK    (RYBY_PIN_MASK | \
                              TRISTATE_PIN_MASK | \
@@ -49,6 +57,13 @@ see file COPYING or http://www.gnu.org/licenses/old-licenses/gpl-2.0.txt
 
 enum fsm_states_e {
     S_IDLE = 0,
+    S_READING_BSS_4,
+    S_READING_BSS_8,
+    S_READING_BSS_64,
+    S_READING_BSS_128,
+    S_READING_BSS_WORD,
+    S_ADDR2,
+    S_ADDR3,
 };
 
 enum external_commands_e {
@@ -57,8 +72,13 @@ enum external_commands_e {
     CMD_PING1,
     CMD_PING2,
     CMD_BOOTLOADER,
-    CMD_SPEEDTEST_READ = 12,
-    CMD_SPEEDTEST_WRITE = 13,
+    CMD_SPEEDTEST_READ = 0x0c,
+    CMD_SPEEDTEST_WRITE = 0x0d,
+    CMD_READ_BSS_4 = 0x10,
+    CMD_READ_BSS_8 = 0x11,
+    CMD_READ_BSS_64 = 0x12,
+    CMD_READ_BSS_128 = 0x13,
+    CMD_READ_BSS_WORD = 0x14,
 };
 
 // Define block/sector size for reading/writing
@@ -67,6 +87,27 @@ enum external_commands_e {
 #define BSS_64      0x10000 //32Kwords = 64KB
 #define BSS_128     0x20000 //64Kwords = 128KB
 #define BSS_WORD    0x00002 //word = 2Bytes
+
+
+/* 8ns per tick -> 13 ticks for 104ns delay */
+#define DELAY_100_NS()  (systick_delay(13))
+
+
+void systick_timer_init(void);
+{
+    // the clock is set to 125 MHz => 1 tick == 8 ns
+    // init SysTick timer
+    systick_hw->csr = 0x05; // enable systick at 1 cycle resolution (8ns)
+    systick_hw->rvr = 0xffff; // 16 bit
+}
+
+
+void systick_delay(uint16_t ticks)
+{
+    uint16_t start = systick_hw->cvr;
+    while((uint16_t)(start-systick_hw->cvr) < ticks); 
+}
+
 
 /*
  * Reset pins to a known good default state
@@ -105,6 +146,81 @@ void release_pins(void)
 }
 
 
+uint16_t get_data_pins(void)
+{
+    uint64_t all_gpio_pins = gpio_get_all64();
+
+    return (uint16_t)(all_gpio_pins >> DATA_PIN_SHIFT);
+}
+
+
+void set_data_pins_input(void)
+{
+    gpio_set_dir_in_masked64(DATA_PIN_MASK);
+}
+
+
+void set_data_pins_output(void)
+{
+    gpio_set_dir_out_masked64(DATA_PIN_MASK);
+}
+
+
+/*
+ * To simplify porting the teensy code, the address is updated
+ * byte-by-byte per the existing protocol.
+ */
+static uint32_t s_address = 0x0;
+void update_address3(uint8_t addr3)
+{
+    s_address = (addr3 << 16) | (s_address & 0xffff);
+}
+
+
+void update_address2(uint8_t addr2)
+{
+    s_address = (s_address & 0xff00ff) | (addr2 << 8);
+}
+
+
+void update_address1(uint8_t addr1)
+{
+    s_address = (s_address & 0xffff00) | (addr1);
+}
+
+
+/*
+ * Put the current address on the bus
+ */
+void update_address_pins(void)
+{
+    gpio_put_masked(
+        ADDRESS_PIN_MASK,
+        (s_address & ADDRESS_PIN_MASK)
+    );
+}
+
+
+void address_increment_and_update_pins(void)
+{
+    s_address++;
+    update_address_pins();
+}
+
+
+/* Helpers for single pins */
+void OE_LOW(void)
+{
+    gpio_clr_mask64(OE_PIN_MASK);
+}
+
+
+void OE_HIGH(void)
+{
+    gpio_set_mask64(OE_PIN_MASK);
+}
+
+
 void __attribute__((noreturn)) enter_bootloader(void)
 {
     reset_usb_boot(0, 0);
@@ -113,7 +229,32 @@ void __attribute__((noreturn)) enter_bootloader(void)
 
 uint8_t state_byte(void)
 {
-    /* TODO: Use the real implementation */
+    uint8_t state_byte = 0;
+
+    if (gpio_get(TRISTATE_PIN)) {
+        state_byte |= 0x20;
+    }
+
+    if (gpio_get(RESET_PIN)) {
+        state_byte |= 0x10;
+    }
+
+    if (gpio_get(RYBY_PIN)) {
+        state_byte |= 0x08;
+    }
+
+    if (gpio_get(CE_PIN)) {
+        state_byte |= 0x04;
+    }
+
+    if (gpio_get(WE_PIN)) {
+        state_byte |= 0x02;
+    }
+
+    if (gpio_get(OE_PIN)) {
+        state_byte |= 0x01;
+    }
+
     return (0);
 }
 
@@ -270,7 +411,119 @@ enum fsm_states_e run_idle_state(void)
         case CMD_SPEEDTEST_WRITE:
             speedtest_receive();
             break;
+        case CMD_READ_BSS_4:
+            next_state = S_READING_BSS_4;
+            break;
+        case CMD_READ_BSS_8:
+            next_state = S_READING_BSS_8;
+            break;
+        case CMD_READ_BSS_64:
+            next_state = S_READING_BSS_64;
+            break;
+        case CMD_READ_BSS_128:
+            next_state = S_READING_BSS_128;
+            break;
+        default:
+            if (rc & 0x10) {
+                next_state = S_READING_BSS_WORD;
+                break;
+            } else if (rc & 0x80) {
+                /* Receive address byte 3 */
+                update_address3((rc << 1) >> 1);
+                next_state = S_ADDR2;
+                break;
+            }
+            break;
         }
+    }
+
+    return (next_state);
+}
+
+
+enum fsm_states_e run_reading_state(enum fsm_states_e current_state)
+{
+    uint16_t data_pins;
+
+    set_data_pins_input();
+
+    if (current_state == S_READING_BSS_WORD) {
+        OE_LOW();
+        DELAY_100_NS();
+        data_pins = get_data_pins();
+        OE_HIGH();
+
+        usb_serial_putchar((char)(data_pins & 0xff00 >> 8));
+        usb_serial_putchar((char)(data_pins & 0xff));
+    } else {
+        uint32_t bss_size;
+        char     buf_read[64];
+        uint8_t  buf_ix = 0;
+        uint32_t address = 0;
+
+        if (current_state == S_READING_BSS_4) {
+            bss_size = BSS_4;
+        } else if (current_state == S_READING_BSS_8) {
+            bss_size = BSS_8;
+        } else if (current_state == S_READING_BSS_64) {
+            bss_size = BSS_64;
+        } else if (current_state == S_READING_BSS_128) {
+            bss_size = BSS_128;
+        } else {
+            bss_size = BSS_WORD;
+        }
+
+        do {
+            OE_LOW();
+            DELAY_100_NS();
+
+            data_pins = get_data_pins();
+            buf_read[buf_ix++] = data_pins & 0xff00 >> 8;
+            buf_read[buf_ix++] = data_pins & 0xff;
+            OE_HIGH();
+
+            address_increment_and_update_pins();
+            if (buf_ix == 64) {
+                usb_serial_write(buf_read, sizeof(buf_read));
+                buf_ix = 0;
+            }
+        } while (address++ != (bss_size/2-1));
+    }
+
+    set_data_pins_output();
+
+    return (S_IDLE);
+}
+
+
+enum fsm_states_e run_addr2_state(enum fsm_states_e current_state)
+{
+    int rc;
+    enum fsm_states_e next_state = S_ADDR3;
+
+    rc = usb_serial_getchar();
+
+    if (rc != PICO_ERROR_TIMEOUT) {
+        update_address2(rc);
+    } else {
+        next_state = S_ADDR2;
+    }
+
+    return (next_state);
+}
+
+
+enum fsm_states_e run_addr3_state(enum fsm_states_e current_state)
+{
+    int rc;
+    enum fsm_states_e next_state = S_IDLE;
+
+    rc = usb_serial_getchar();
+
+    if (rc != PICO_ERROR_TIMEOUT) {
+        update_address1(rc);
+    } else {
+        next_state = S_ADDR3;
     }
 
     return (next_state);
@@ -285,6 +538,19 @@ enum fsm_states_e run_norway_state_machine(enum fsm_states_e current_state)
     case S_IDLE:
         next_state = run_idle_state();
         break;
+    case S_READING_BSS_4:
+    case S_READING_BSS_8:
+    case S_READING_BSS_64:
+    case S_READING_BSS_128:
+    case S_READING_BSS_WORD:
+        next_state = run_reading_state(current_state);
+        break;
+    case S_ADDR2:
+        next_state = run_addr2_state(current_state);
+        break;
+    case S_ADDR3:
+        next_state = run_addr3_state(current_state);
+        break;
     }
 
     return (next_state);
@@ -296,6 +562,7 @@ int main(void)
     enum fsm_states_e current_fsm_state = S_IDLE;
 
     stdio_init_all();
+    systick_timer_init();
 
     /* Don't lock the flash bus unless we're connected to a computer */
     release_pins();
