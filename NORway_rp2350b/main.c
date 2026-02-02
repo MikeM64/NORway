@@ -441,6 +441,9 @@ enum fsm_states_e run_idle_state(void)
         case CMD_READ_BSS_128:
             next_state = S_READING_BSS_128;
             break;
+        case CMD_READ_BSS_WORD:
+            next_state = S_READING_BSS_WORD;
+            break;
         case CMD_INIT_PORTS:
             init_pins();
             break;
@@ -454,8 +457,10 @@ enum fsm_states_e run_idle_state(void)
             RESET_HIGH();
             break;
         default:
-            if ((rc >> 3) == 2) {
-                next_state = S_READING_BSS_WORD;
+            if ((rc >> 7) == 1) {
+                /* Receive address byte 3 */
+                update_address3((rc << 1) >> 1);
+                next_state = S_ADDR2;
             } else if ((rc >> 6) == 1) {
                 /*
                  * Delay - The teensy implementation would loop
@@ -463,10 +468,6 @@ enum fsm_states_e run_idle_state(void)
                  * as sent. For the pico, 1 "cycle" == 1us.
                  */
                 sleep_us(rc & 0x3f);
-            } else if ((rc >> 7) == 1) {
-                /* Receive address byte 3 */
-                update_address3((rc << 1) >> 1);
-                next_state = S_ADDR2;
             }
             break;
         }
