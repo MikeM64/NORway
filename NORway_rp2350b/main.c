@@ -1,14 +1,14 @@
 /************************************************************************
-  norflash.v - NOR flasher for PS3
+norflash.v - NOR flasher for PS3
 
-Copyright (C) 2010-2011  Hector Martin "marcan" <hector@marcansoft.com>
+Copyright (C) 2010-2011, 2026
+
+Hector Martin "marcan" <hector@marcansoft.com>
+NORway.c (v0.8) - Teensy++ 2.0 port by judges@eEcho.com
+RP2350B port by MikeM64
 
 This code is licensed to you under the terms of the GNU GPL, version 2;
 see file COPYING or http://www.gnu.org/licenses/old-licenses/gpl-2.0.txt
-*************************************************************************
- NORway.c (v0.8) - Teensy++ 2.0 port by judges@eEcho.com
-*************************************************************************
-* RP2350B port by MikeM64
 *************************************************************************/
 
 
@@ -66,6 +66,8 @@ enum fsm_states_e {
     S_READING_BSS_WORD,
     S_ADDR2,
     S_ADDR3,
+    S_WRITE,
+    S_WRITE_INCREMENT,
 };
 
 enum external_commands_e {
@@ -85,6 +87,8 @@ enum external_commands_e {
     CMD_READ_BSS_64 = 0x12,
     CMD_READ_BSS_128 = 0x13,
     CMD_READ_BSS_WORD = 0x14,
+    CMD_WRITE = 0x18,
+    CMD_WRITE_INCREMENT = 0x19,
 };
 
 // Define block/sector size for reading/writing
@@ -215,6 +219,18 @@ void address_increment_and_update_pins(void)
 
 
 /* Helpers for single pins */
+void CE_LOW(void)
+{
+    gpio_clr_mask64(CE_PIN_MASK);
+}
+
+
+void CE_HIGH(void)
+{
+    gpio_set_mask64(CE_PIN_MASK);
+}
+
+
 void OE_LOW(void)
 {
     gpio_clr_mask64(OE_PIN_MASK);
@@ -236,6 +252,18 @@ void RESET_LOW(void)
 void RESET_HIGH(void)
 {
     gpio_set_mask64(RESET_PIN_MASK);
+}
+
+
+void WE_LOW(void)
+{
+    gpio_clr_mask64(WE_PIN_MASK);
+}
+
+
+void WE_HIGH(void)
+{
+    gpio_set_mask64(WE_PIN_MASK);
 }
 
 
@@ -456,9 +484,27 @@ enum fsm_states_e run_idle_state(void)
         case CMD_RESET_DISABLE:
             RESET_HIGH();
             break;
+        case CMD_WRITE:
+            OE_HIGH();
+            CE_LOW();
+            WE_LOW();
+            next_state = S_WRITE;
+            break;
+        case CMD_WRITE_INCREMENT:
+            OE_HIGH();
+            CE_LOW();
+            WE_LOW();
+            next_state = S_WRITE_INCREMENT;
+            break;
         default:
+            /*
+             * This is for commands that pack an argument into
+             * the command byte itself.
+             */
             if ((rc >> 7) == 1) {
-                /* Receive address byte 3 */
+                /*
+                 * Address - Receive address byte 3
+                 */
                 update_address3((rc << 1) >> 1);
                 next_state = S_ADDR2;
             } else if ((rc >> 6) == 1) {
@@ -566,6 +612,36 @@ enum fsm_states_e run_addr3_state(enum fsm_states_e current_state)
 }
 
 
+enum fsm_states_e run_write_state(enum fsm_states_e current_state)
+{
+    enum fsm_states_e next_state = S_IDLE;
+    int rc;
+    uint16_t data_word = 0;
+
+    do {
+    rc = usb_serial_getchar();
+        if (rc != PICO_ERROR_TIMEOUT) {
+            data_word |= ((uint8_t)rc) << 8;
+        }
+    } while (rc == PICO_ERROR_TIMEOUT);
+
+    do {
+    rc = usb_serial_getchar();
+        if (rc != PICO_ERROR_TIMEOUT) {
+            data_word |= ((uint8_t)rc);
+        }
+    } while (rc == PICO_ERROR_TIMEOUT);
+
+    DELAY_100_NS();
+
+    if (current_state == S_WRITE_INCREMENT) {
+        address_increment_and_update_pins();
+    }
+
+    return (next_state);
+}
+
+
 enum fsm_states_e run_norway_state_machine(enum fsm_states_e current_state)
 {
     enum fsm_states_e next_state = S_IDLE;
@@ -586,6 +662,10 @@ enum fsm_states_e run_norway_state_machine(enum fsm_states_e current_state)
         break;
     case S_ADDR3:
         next_state = run_addr3_state(current_state);
+        break;
+    case S_WRITE:
+    case S_WRITE_INCREMENT:
+        next_state = run_write_state(current_state);
         break;
     }
 
