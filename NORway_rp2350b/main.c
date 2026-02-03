@@ -24,17 +24,17 @@ see file COPYING or http://www.gnu.org/licenses/old-licenses/gpl-2.0.txt
 /* GPIO 0 through 22 are reserved for address lines */
 #define ADDRESS_PIN_MASK    (0x7FFFFFull)
 
-/* GPIO 23 though 38 are reserved for data lines */
+/* GPIO 23 though 39 are reserved for data lines */
 #define DATA_PIN_SHIFT      (23)
 #define DATA_PIN_MASK       (0x3FFFC00000ull)
 
-/* GPIO 39 through 44 are for control lines */
-#define RYBY_PIN            (39)
-#define TRISTATE_PIN        (40)
-#define CE_PIN              (41)
-#define WE_PIN              (42)
-#define OE_PIN              (43)
-#define RESET_PIN           (44)
+/* GPIO 40 through 45 are for control lines */
+#define RYBY_PIN            (40)
+#define TRISTATE_PIN        (41)
+#define CE_PIN              (42)
+#define WE_PIN              (43)
+#define OE_PIN              (44)
+#define RESET_PIN           (45)
 
 #define RYBY_PIN_MASK       (1ull << RYBY_PIN)
 #define TRISTATE_PIN_MASK   (1ull << TRISTATE_PIN)
@@ -54,7 +54,7 @@ see file COPYING or http://www.gnu.org/licenses/old-licenses/gpl-2.0.txt
                              DATA_PIN_MASK | \
                              CONTROL_PIN_MASK)
 
-#define NUM_PINS            (45)
+#define NUM_PINS            (46)
 
 
 enum fsm_states_e {
