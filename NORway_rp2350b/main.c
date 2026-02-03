@@ -70,6 +70,8 @@ enum fsm_states_e {
     S_WRITE_INCREMENT,
     S_WAIT,
     S_WAIT_INCREMENT,
+    S_WRITEWORD,
+    S_WRITEWORD_2NDDIE,
 };
 
 enum external_commands_e {
@@ -96,6 +98,8 @@ enum external_commands_e {
     CMD_READ_BSS_WORD = 0x14,
     CMD_WRITE = 0x18,
     CMD_WRITE_INCREMENT = 0x19,
+    CMD_WRITEWORD = 0x1a,
+    CMD_WRITEWORD_2NDDIE = 0x1b,
 };
 
 // Define block/sector size for reading/writing
@@ -177,6 +181,14 @@ uint16_t get_data_pins(void)
 }
 
 
+void put_data_u16(uint16_t data_to_output)
+{
+    gpio_put_masked64(
+        DATA_PIN_MASK,
+        (uint64_t)data_to_output << DATA_PIN_SHIFT);
+}
+
+
 void set_data_pins_input(void)
 {
     gpio_set_dir_in_masked64(DATA_PIN_MASK);
@@ -221,6 +233,20 @@ void update_address_pins(void)
         ADDRESS_PIN_MASK,
         (s_address & ADDRESS_PIN_MASK)
     );
+}
+
+
+void put_address_u32(uint32_t address_to_output)
+{
+    gpio_put_masked(
+        ADDRESS_PIN_MASK,
+        (address_to_output & ADDRESS_PIN_MASK));
+}
+
+
+void address_increment(void)
+{
+    s_address++;
 }
 
 
@@ -530,6 +556,16 @@ enum fsm_states_e run_idle_state(void)
             WE_LOW();
             next_state = S_WRITE_INCREMENT;
             break;
+        case CMD_WRITEWORD:
+            OE_HIGH();
+            CE_LOW();
+            next_state = S_WRITEWORD;
+            break;
+        case CMD_WRITEWORD_2NDDIE:
+            OE_HIGH();
+            CE_LOW();
+            next_state = S_WRITEWORD_2NDDIE;
+            break;
         default:
             /*
              * This is for commands that pack an argument into
@@ -685,6 +721,7 @@ enum fsm_states_e run_wait_state(enum fsm_states_e current_state)
     DELAY_200_NS();
 
     do {
+        /* Busy wait for RYBY if it's not ready yet */
     } while (!get_RYBY());
 
     if (current_state == S_WAIT_INCREMENT) {
@@ -694,6 +731,121 @@ enum fsm_states_e run_wait_state(enum fsm_states_e current_state)
     return (next_state);
 }
 
+
+bool wait_for_ryby_during_write(void)
+{
+    DELAY_200_NS();
+
+    uint32_t cnt = 0xFFFFFF; /* ~17s on teensy, hopefully long enough on pico */
+    do {
+        cnt--;
+    } while(!get_RYBY() || cnt > 0);
+
+    return (cnt == 0);
+}
+
+
+bool verify(char *buf_to_verify, size_t buf_len)
+{
+    bool        data_mismatch = false;
+    uint16_t    data_word;
+
+    set_data_pins_input();
+
+    while (buf_len && !data_mismatch) {
+        OE_LOW();
+        DELAY_100_NS();
+
+        data_word = get_data_pins();
+
+        if ((*buf_to_verify++ != (data_word & 0xff00) >> 8) ||
+            (*buf_to_verify++ != (data_word & 0xff))) {
+            data_mismatch = true;
+            OE_HIGH();
+        } else {
+            OE_HIGH();
+            address_increment_and_update_pins();
+            buf_len -= 2;
+        }
+    }
+
+    set_data_pins_output();
+
+    return (data_mismatch);
+}
+
+
+enum fsm_states_e run_writeword_state(enum fsm_states_e current_state)
+{
+    enum fsm_states_e   next_state = S_IDLE;
+    int                 rc = 0;
+    char                buf_write[BSS_4];
+    size_t              i = 0;
+    uint32_t            offset_2nddie;
+    bool                write_timeout = false;
+
+    if (current_state == S_WRITEWORD_2NDDIE) {
+        offset_2nddie = 0x400000;
+    } else {
+        offset_2nddie = 0x0;
+    }
+
+    while (i < BSS_4 && rc != PICO_ERROR_TIMEOUT) {
+        rc = usb_serial_getbuf(&buf_write[i], 128);
+        if (rc == PICO_ERROR_TIMEOUT) {
+            usb_serial_putchar('T');
+        }
+
+        i += rc;
+    }
+
+    if (i < sizeof(buf_write)) {
+        usb_serial_putchar('R');
+    } else {
+        uint32_t verify_starting_addr = s_address;
+
+        for (i = 0; i < BSS_4 && !write_timeout; i += 2) {
+            /*
+             * Erased flash defaults to 0xFFFF, skip those writes
+             */
+            if (buf_write[i] == 0xFF && buf_write[i+1] == 0xFF) {
+                address_increment();
+            } else {
+                put_address_u32(offset_2nddie | 0x0555);
+                put_data_u16(0x00AA);
+
+                put_address_u32(offset_2nddie | 0x02AA);
+                put_data_u16(0x0055);
+
+                put_address_u32(offset_2nddie | 0x0555);
+                put_data_u16(0x00A0);
+
+                put_address_u32(s_address);
+                put_data_u16((buf_write[i] << 8) | buf_write[i+1]);
+
+                address_increment();
+                write_timeout = wait_for_ryby_during_write();
+            }
+        }
+
+        if (i < BSS_4) {
+            usb_serial_putchar('T');
+        } else if (s_write_verification_enabled) {
+            s_address = verify_starting_addr;
+            put_address_u32(s_address);
+
+            if (verify(buf_write, sizeof(buf_write))) {
+                usb_serial_putchar('V');
+            } else {
+                usb_serial_putchar('K');
+            }
+        } else {
+            usb_serial_putchar('K');
+        }
+    }
+
+    return (next_state);
+}
 
 enum fsm_states_e run_norway_state_machine(enum fsm_states_e current_state)
 {
@@ -723,6 +875,10 @@ enum fsm_states_e run_norway_state_machine(enum fsm_states_e current_state)
     case S_WAIT:
     case S_WAIT_INCREMENT:
         next_state = run_wait_state(current_state);
+        break;
+    case S_WRITEWORD:
+    case S_WRITEWORD_2NDDIE:
+        next_state = run_writeword_state(current_state);
         break;
     }
 
