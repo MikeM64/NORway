@@ -83,10 +83,10 @@ enum external_commands_e {
     CMD_INIT_PORTS,
     CMD_RESET_DISABLE,
     CMD_RESET_ENABLE,
-    CMD_VERIFY_DISABLE, // Not implemented yet
-    CMD_VERIFY_ENABLE, // Not implemented yet
     CMD_SPEEDTEST_READ,
     CMD_SPEEDTEST_WRITE,
+    CMD_VERIFY_DISABLE,
+    CMD_VERIFY_ENABLE,
     CMD_WAIT,
     CMD_WAIT_INCREMENT,
     CMD_READ_BSS_4 = 0x10,
@@ -104,6 +104,10 @@ enum external_commands_e {
 #define BSS_64      0x10000 //32Kwords = 64KB
 #define BSS_128     0x20000 //64Kwords = 128KB
 #define BSS_WORD    0x00002 //word = 2Bytes
+
+
+/* Global configuration */
+static bool s_write_verification_enabled = false;
 
 
 /* 8ns per tick -> 13 ticks for 104ns delay */
@@ -480,6 +484,12 @@ enum fsm_states_e run_idle_state(void)
             break;
         case CMD_RESET_ENABLE:
             RESET_LOW();
+            break;
+        case CMD_VERIFY_ENABLE:
+            s_write_verification_enabled = true;
+            break;
+        case CMD_VERIFY_DISABLE:
+            s_write_verification_enabled = false;
             break;
         case CMD_SPEEDTEST_READ:
             speedtest_send();
