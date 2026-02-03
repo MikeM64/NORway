@@ -74,6 +74,8 @@ enum fsm_states_e {
     S_WRITEWORD_2NDDIE,
     S_WRITEWORD_UBM,
     S_WRITEWORD_UBM_2NDDIE,
+    S_WRITEWORD_WBP,
+    S_WRITEWORD_WBP_2NDDIE,
 };
 
 enum external_commands_e {
@@ -104,6 +106,8 @@ enum external_commands_e {
     CMD_WRITEWORD_2NDDIE = 0x1b,
     CMD_WRITEWORD_UBM = 0x1c,
     CMD_WRITEWORD_UBM_2NDDIE = 0x1d,
+    CMD_WRITEWORD_WBP = 0x1e,
+    CMD_WRITEWORD_WBP_2NDDIE = 0x1f,
 };
 
 // Define block/sector size for reading/writing
@@ -573,10 +577,12 @@ enum fsm_states_e run_idle_state(void)
         case CMD_WRITEWORD_UBM:
             OE_HIGH();
             CE_LOW();
+            next_state = S_WRITEWORD_WBP;
             break;
         case CMD_WRITEWORD_UBM_2NDDIE:
             OE_HIGH();
             CE_LOW();
+            next_state = S_WRITEWORD_WBP_2NDDIE;
             break;
         default:
             /*
@@ -875,6 +881,54 @@ size_t program_buffer_writeword_ubm(
 }
 
 
+size_t program_buffer_writeword_wbp(
+    char *buf_write,
+    size_t buf_len,
+    uint32_t offset_2nddie)
+{
+    bool        write_timeout = false;
+    size_t      i, k;
+    uint32_t    buf_start_address;
+
+    /*
+     * Write data
+     */
+    for (i = 0; i < buf_len && !write_timeout; i += 64) {
+        buf_start_address = s_address;
+
+        /*
+         * Enter write buffer programming mode
+         */
+        put_address_u32(0x0555);
+        put_data_u16(0x00AA);
+
+        put_address_u32(0x02AA);
+        put_data_u16(0x0055);
+
+        put_address_u32(buf_start_address);
+        put_data_u16(0x0025);
+
+        put_address_u32(buf_start_address);
+        put_data_u16(0x001F);
+
+        /*
+         * Write to the write buffer
+         */
+        for (k = 0; k < 64; k += 2) {
+            put_data_u16((buf_write[i+k] << 8) | buf_write[i+k+1]);
+            address_increment_and_update_pins();
+        }
+
+        put_address_u32(buf_start_address);
+        put_data_u16(0x0029);
+
+        write_timeout = wait_for_ryby_during_write();
+    }
+
+    return (i);
+}
+
+
 enum fsm_states_e run_write_buffer_state(enum fsm_states_e current_state)
 {
     enum fsm_states_e   next_state = S_IDLE;
@@ -913,6 +967,12 @@ enum fsm_states_e run_write_buffer_state(enum fsm_states_e current_state)
         } else if (current_state == S_WRITEWORD_UBM ||
             current_state == S_WRITEWORD_UBM_2NDDIE) {
             i = program_buffer_writeword_ubm(
+                buf_write,
+                sizeof(buf_write),
+                offset_2nddie);
+        } else if (current_state == S_WRITEWORD_WBP ||
+            current_state == S_WRITEWORD_WBP_2NDDIE) {
+            i = program_buffer_writeword_wbp(
                 buf_write,
                 sizeof(buf_write),
                 offset_2nddie);
@@ -971,6 +1031,8 @@ enum fsm_states_e run_norway_state_machine(enum fsm_states_e current_state)
     case S_WRITEWORD_2NDDIE:
     case S_WRITEWORD_UBM:
     case S_WRITEWORD_UBM_2NDDIE:
+    case S_WRITEWORD_WBP:
+    case S_WRITEWORD_WBP_2NDDIE:
         next_state = run_write_buffer_state(current_state);
         break;
     }
