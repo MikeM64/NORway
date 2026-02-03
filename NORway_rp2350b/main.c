@@ -76,12 +76,17 @@ enum external_commands_e {
     CMD_PING1,
     CMD_PING2,
     CMD_BOOTLOADER,
-    CMD_RELEASE_PORTS = 0x6,
-    CMD_INIT_PORTS = 0x7,
-    CMD_RESET_DISABLE = 0x8,
-    CMD_RESET_ENABLE = 0x9,
-    CMD_SPEEDTEST_READ = 0x0c,
-    CMD_SPEEDTEST_WRITE = 0x0d,
+    CMD_ADDR_INCREMENT,
+    CMD_RELEASE_PORTS,
+    CMD_INIT_PORTS,
+    CMD_RESET_DISABLE,
+    CMD_RESET_ENABLE,
+    CMD_VERIFY_DISABLE, // Not implemented yet
+    CMD_VERIFY_ENABLE, // Not implemented yet
+    CMD_SPEEDTEST_READ,
+    CMD_SPEEDTEST_WRITE,
+    CMD_WAIT, // Not implemented yet
+    CMD_WAIT_INCREMENT, // Not implemented yet
     CMD_READ_BSS_4 = 0x10,
     CMD_READ_BSS_8 = 0x11,
     CMD_READ_BSS_64 = 0x12,
@@ -451,6 +456,21 @@ enum fsm_states_e run_idle_state(void)
         case CMD_BOOTLOADER:
             enter_bootloader();
             break;
+        case CMD_ADDR_INCREMENT:
+            address_increment_and_update_pins();
+            break;
+        case CMD_RELEASE_PORTS:
+            release_pins();
+            break;
+        case CMD_INIT_PORTS:
+            init_pins();
+            break;
+        case CMD_RESET_DISABLE:
+            RESET_HIGH();
+            break;
+        case CMD_RESET_ENABLE:
+            RESET_LOW();
+            break;
         case CMD_SPEEDTEST_READ:
             speedtest_send();
             break;
@@ -471,18 +491,6 @@ enum fsm_states_e run_idle_state(void)
             break;
         case CMD_READ_BSS_WORD:
             next_state = S_READING_BSS_WORD;
-            break;
-        case CMD_INIT_PORTS:
-            init_pins();
-            break;
-        case CMD_RELEASE_PORTS:
-            release_pins();
-            break;
-        case CMD_RESET_ENABLE:
-            RESET_LOW();
-            break;
-        case CMD_RESET_DISABLE:
-            RESET_HIGH();
             break;
         case CMD_WRITE:
             OE_HIGH();
