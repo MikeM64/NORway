@@ -641,6 +641,7 @@ enum fsm_states_e run_write_state(enum fsm_states_e current_state)
     } while (rc == PICO_ERROR_TIMEOUT);
 
     DELAY_100_NS();
+    WE_HIGH();
 
     if (current_state == S_WRITE_INCREMENT) {
         address_increment_and_update_pins();
