@@ -72,6 +72,8 @@ enum fsm_states_e {
     S_WAIT_INCREMENT,
     S_WRITEWORD,
     S_WRITEWORD_2NDDIE,
+    S_WRITEWORD_UBM,
+    S_WRITEWORD_UBM_2NDDIE,
 };
 
 enum external_commands_e {
@@ -100,6 +102,8 @@ enum external_commands_e {
     CMD_WRITE_INCREMENT = 0x19,
     CMD_WRITEWORD = 0x1a,
     CMD_WRITEWORD_2NDDIE = 0x1b,
+    CMD_WRITEWORD_UBM = 0x1c,
+    CMD_WRITEWORD_UBM_2NDDIE = 0x1d,
 };
 
 // Define block/sector size for reading/writing
@@ -566,6 +570,14 @@ enum fsm_states_e run_idle_state(void)
             CE_LOW();
             next_state = S_WRITEWORD_2NDDIE;
             break;
+        case CMD_WRITEWORD_UBM:
+            OE_HIGH();
+            CE_LOW();
+            break;
+        case CMD_WRITEWORD_UBM_2NDDIE:
+            OE_HIGH();
+            CE_LOW();
+            break;
         default:
             /*
              * This is for commands that pack an argument into
@@ -775,22 +787,110 @@ bool verify(char *buf_to_verify, size_t buf_len)
 }
 
 
-enum fsm_states_e run_writeword_state(enum fsm_states_e current_state)
+size_t program_buffer_writeword(
+    char *buf_write,
+    size_t buf_len,
+    uint32_t offset_2nddie)
+{
+    bool    write_timeout = false;
+    size_t  i;
+
+    for (i = 0; i < buf_len && !write_timeout; i += 2) {
+        /*
+         * Erased flash defaults to 0xFFFF, skip those writes
+         */
+        if (buf_write[i] == 0xFF && buf_write[i+1] == 0xFF) {
+            address_increment();
+        } else {
+            put_address_u32(offset_2nddie | 0x0555);
+            put_data_u16(0x00AA);
+
+            put_address_u32(offset_2nddie | 0x02AA);
+            put_data_u16(0x0055);
+
+            put_address_u32(offset_2nddie | 0x0555);
+            put_data_u16(0x00A0);
+
+            put_address_u32(s_address);
+            put_data_u16((buf_write[i] << 8) | buf_write[i+1]);
+
+            address_increment();
+            write_timeout = wait_for_ryby_during_write();
+        }
+    }
+
+    return (i);
+}
+
+
+size_t program_buffer_writeword_ubm(
+    char *buf_write,
+    size_t buf_len,
+    uint32_t offset_2nddie)
+{
+    bool    write_timeout = false;
+    size_t  i;
+
+    /*
+     * Enter unlock bypass mode
+     */
+    put_address_u32(offset_2nddie | 0x0555);
+    put_data_u16(0x00AA);
+
+    put_address_u32(offset_2nddie | 0x02AA);
+    put_data_u16(0x0055);
+
+    put_address_u32(offset_2nddie | 0x0555);
+    put_data_u16(0x0020);
+
+    put_address_u32(s_address);
+
+    /*
+     * Write data
+     */
+    for (i = 0; i < buf_len && !write_timeout; i += 2) {
+        /*
+         * Erased flash defaults to 0xFFFF, skip those writes
+         */
+        if (buf_write[i] == 0xFF && buf_write[i+1] == 0xFF) {
+            address_increment();
+        } else {
+            put_data_u16(0x00A0);
+            put_data_u16((buf_write[i] << 8) | buf_write[i+1]);
+
+            write_timeout = wait_for_ryby_during_write();
+            if (!write_timeout) {
+                address_increment_and_update_pins();
+            }
+        }
+    }
+
+    /*
+     * Exit unlock bypass mode
+     */
+    put_data_u16(0x0090);
+    put_data_u16(0x0000);
+
+    return (i);
+}
+
+
+enum fsm_states_e run_write_buffer_state(enum fsm_states_e current_state)
 {
     enum fsm_states_e   next_state = S_IDLE;
     int                 rc = 0;
     char                buf_write[BSS_4];
     size_t              i = 0;
     uint32_t            offset_2nddie;
-    bool                write_timeout = false;
 
-    if (current_state == S_WRITEWORD_2NDDIE) {
+    if (current_state == S_WRITEWORD_2NDDIE ||
+        current_state == S_WRITEWORD_UBM_2NDDIE) {
         offset_2nddie = 0x400000;
     } else {
         offset_2nddie = 0x0;
     }
 
-    while (i < BSS_4 && rc != PICO_ERROR_TIMEOUT) {
+    while (i < sizeof(buf_write) && rc != PICO_ERROR_TIMEOUT) {
         rc = usb_serial_getbuf(&buf_write[i], 128);
         if (rc == PICO_ERROR_TIMEOUT) {
             usb_serial_putchar('T');
@@ -804,31 +904,21 @@ enum fsm_states_e run_writeword_state(enum fsm_states_e current_state)
     } else {
         uint32_t verify_starting_addr = s_address;
 
-        for (i = 0; i < BSS_4 && !write_timeout; i += 2) {
-            /*
-             * Erased flash defaults to 0xFFFF, skip those writes
-             */
-            if (buf_write[i] == 0xFF && buf_write[i+1] == 0xFF) {
-                address_increment();
-            } else {
-                put_address_u32(offset_2nddie | 0x0555);
-                put_data_u16(0x00AA);
-
-                put_address_u32(offset_2nddie | 0x02AA);
-                put_data_u16(0x0055);
-
-                put_address_u32(offset_2nddie | 0x0555);
-                put_data_u16(0x00A0);
-
-                put_address_u32(s_address);
-                put_data_u16((buf_write[i] << 8) | buf_write[i+1]);
-
-                address_increment();
-                write_timeout = wait_for_ryby_during_write();
-            }
+        if (current_state == S_WRITEWORD ||
+            current_state == S_WRITEWORD_2NDDIE) {
+            i = program_buffer_writeword(
+                buf_write,
+                sizeof(buf_write),
+                offset_2nddie);
+        } else if (current_state == S_WRITEWORD_UBM ||
+            current_state == S_WRITEWORD_UBM_2NDDIE) {
+            i = program_buffer_writeword_ubm(
+                buf_write,
+                sizeof(buf_write),
+                offset_2nddie);
         }
 
-        if (i < BSS_4) {
+        if (i < sizeof(buf_write)) {
             usb_serial_putchar('T');
         } else if (s_write_verification_enabled) {
             s_address = verify_starting_addr;
@@ -846,6 +936,7 @@ enum fsm_states_e run_writeword_state(enum fsm_states_e current_state)
 
     return (next_state);
 }
+
 
 enum fsm_states_e run_norway_state_machine(enum fsm_states_e current_state)
 {
@@ -878,7 +969,9 @@ enum fsm_states_e run_norway_state_machine(enum fsm_states_e current_state)
         break;
     case S_WRITEWORD:
     case S_WRITEWORD_2NDDIE:
-        next_state = run_writeword_state(current_state);
+    case S_WRITEWORD_UBM:
+    case S_WRITEWORD_UBM_2NDDIE:
+        next_state = run_write_buffer_state(current_state);
         break;
     }
 
