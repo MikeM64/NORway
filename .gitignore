@@ -34,3 +34,4 @@ SPIway/SPIway.atsuo
 NANDway/Dual NAND Edition/NANDway_DualNANDEdition.srec
 NANDway/Signal Booster Edition/NANDway_SignalBoosterEdition.srec
 /SPIway/Release/SPIway.srec
+*.xcf
