@@ -68,6 +68,8 @@ enum fsm_states_e {
     S_ADDR3,
     S_WRITE,
     S_WRITE_INCREMENT,
+    S_WAIT,
+    S_WAIT_INCREMENT,
 };
 
 enum external_commands_e {
@@ -85,8 +87,8 @@ enum external_commands_e {
     CMD_VERIFY_ENABLE, // Not implemented yet
     CMD_SPEEDTEST_READ,
     CMD_SPEEDTEST_WRITE,
-    CMD_WAIT, // Not implemented yet
-    CMD_WAIT_INCREMENT, // Not implemented yet
+    CMD_WAIT,
+    CMD_WAIT_INCREMENT,
     CMD_READ_BSS_4 = 0x10,
     CMD_READ_BSS_8 = 0x11,
     CMD_READ_BSS_64 = 0x12,
@@ -106,6 +108,8 @@ enum external_commands_e {
 
 /* 8ns per tick -> 13 ticks for 104ns delay */
 #define DELAY_100_NS()  (systick_delay(13))
+/* 8ns per tick -> 25 ticks for 200ns delay */
+#define DELAY_200_NS()  (systick_delay(25))
 
 
 void systick_timer_init(void)
@@ -269,6 +273,12 @@ void WE_LOW(void)
 void WE_HIGH(void)
 {
     gpio_set_mask64(WE_PIN_MASK);
+}
+
+
+bool get_RYBY(void)
+{
+    return gpio_get(RYBY_PIN);
 }
 
 
@@ -477,6 +487,12 @@ enum fsm_states_e run_idle_state(void)
         case CMD_SPEEDTEST_WRITE:
             speedtest_receive();
             break;
+        case CMD_WAIT:
+            next_state = S_WAIT;
+            break;
+        case CMD_WAIT_INCREMENT:
+            next_state = S_WAIT_INCREMENT;
+            break;
         case CMD_READ_BSS_4:
             next_state = S_READING_BSS_4;
             break;
@@ -651,6 +667,24 @@ enum fsm_states_e run_write_state(enum fsm_states_e current_state)
 }
 
 
+enum fsm_states_e run_wait_state(enum fsm_states_e current_state)
+{
+    enum fsm_states_e next_state = S_IDLE;
+
+    /* Wait 200ns for RYBY to become active */
+    DELAY_200_NS();
+
+    do {
+    } while (!get_RYBY());
+
+    if (current_state == S_WAIT_INCREMENT) {
+        address_increment_and_update_pins();
+    }
+
+    return (next_state);
+}
+
+
 enum fsm_states_e run_norway_state_machine(enum fsm_states_e current_state)
 {
     enum fsm_states_e next_state = S_IDLE;
@@ -675,6 +709,10 @@ enum fsm_states_e run_norway_state_machine(enum fsm_states_e current_state)
     case S_WRITE:
     case S_WRITE_INCREMENT:
         next_state = run_write_state(current_state);
+        break;
+    case S_WAIT:
+    case S_WAIT_INCREMENT:
+        next_state = run_wait_state(current_state);
         break;
     }
 
