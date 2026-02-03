@@ -596,7 +596,7 @@ class NORFlasher(TeensySerial):
 		return s128kb
 
 	def speedtest_read(self):
-		self.write(0x0C)
+		self.write(0x0A)
 		d = self.read(0x20000)
 		return d
 
@@ -606,7 +606,7 @@ class NORFlasher(TeensySerial):
 
 		# 4KB blocks
 		for block in range(0,0x20000,0x1000):
-			self.write(0x0D)
+			self.write(0x0B)
 			self.write(data[block:block+0x1000])
 
 			# read write status byte

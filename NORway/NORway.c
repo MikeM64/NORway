@@ -505,10 +505,10 @@ int main(void)
 						else
 							releaseports();
 					} */
-					else if (in_data == 12) {		//8'b00001101: SPEEDTEST_READ
+					else if (in_data == 10) {		//8'b00001101: SPEEDTEST_READ
 						speedtest_send();
 					}
-					else if (in_data == 13) {		//8'b00001100: SPEEDTEST_WRITE
+					else if (in_data == 11) {		//8'b00001100: SPEEDTEST_WRITE
 						speedtest_receive();
 					}
 					else if ((in_data>>1)==6) {		//8'b0000110z: VERIFY
