@@ -21,11 +21,11 @@ see file COPYING or http://www.gnu.org/licenses/old-licenses/gpl-2.0.txt
 
 #include "tusb.h"
 
-/* GPIO 0 through 21 are reserved for address lines */
-#define ADDRESS_PIN_MASK    (0x3FFFFFull)
+/* GPIO 0 through 22 are reserved for address lines */
+#define ADDRESS_PIN_MASK    (0x7FFFFFull)
 
-/* GPIO 22 though 38 are reserved for data lines */
-#define DATA_PIN_SHIFT      (22)
+/* GPIO 23 though 38 are reserved for data lines */
+#define DATA_PIN_SHIFT      (23)
 #define DATA_PIN_MASK       (0x3FFFC00000ull)
 
 /* GPIO 39 through 44 are for control lines */
