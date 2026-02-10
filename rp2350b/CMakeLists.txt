@@ -19,9 +19,13 @@ add_compile_options(-Werror -Wall)
 add_library(flashway_common
     common/bootloader.c
     common/delay.c
+    common/usb_serial.c
 )
 include_directories(common)
 target_link_libraries(flashway_common pico_stdlib)
+
+pico_enable_stdio_usb(flashway_common 1)
+pico_enable_stdio_uart(flashway_common 0)
 
 ##############################
 

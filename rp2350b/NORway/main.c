@@ -17,10 +17,9 @@ see file COPYING or http://www.gnu.org/licenses/old-licenses/gpl-2.0.txt
 
 #include "delay.h"
 #include "bootloader.h"
+#include "usb_serial.h"
 
 #include "hardware/gpio.h"
-
-#include "tusb.h"
 
 /* GPIO 0 through 22 are reserved for address lines */
 #define ADDRESS_PIN_MASK    (0x7FFFFFull)
@@ -328,83 +327,6 @@ uint8_t state_byte(void)
     }
 
     return (0);
-}
-
-
-void wait_for_usb_serial_connection(void)
-{
-    while(!tud_cdc_connected()) {
-    }
-}
-
-
-void flush_uart_io(void)
-{
-    int rc;
-    absolute_time_t end_time;
-
-    /* Flush all output */
-    stdio_flush();
-
-    /* Flush any waiting input data */
-    char flush_buf[8];
-
-    /* Wait up to 10us since the last data to consider the
-     * input buffer flushed */
-    do {
-        end_time = delayed_by_us(get_absolute_time(), 10);
-        rc = stdio_get_until(flush_buf, sizeof(flush_buf), end_time);
-    } while (rc != PICO_ERROR_TIMEOUT);
-}
-
-
-void usb_serial_putchar(char c)
-{
-    (void)stdio_putchar_raw(c);
-}
-
-
-/*
- * Waits for a character to be returned by the serial port.
- * Will wait up to 100ms for a character to be received -
- * needed because the python script on the host is much slower
- * to send data than the pico can receive it.
- */
-int usb_serial_getchar(void)
-{
-    int rc;
-    absolute_time_t end_time;
-    char input_buf;
-
-    end_time = delayed_by_us(get_absolute_time(), 100000);
-    rc = stdio_get_until(&input_buf, sizeof(input_buf), end_time);
-
-    if (rc != PICO_ERROR_TIMEOUT) {
-        rc = input_buf;
-    }
-
-    return (rc);
-}
-
-
-int usb_serial_getbuf(char *input_buf, size_t input_buf_len)
-{
-    int rc;
-    absolute_time_t end_time;
-
-    end_time = delayed_by_us(get_absolute_time(), 100000);
-    rc = stdio_get_until(input_buf, input_buf_len, end_time);
-
-    return (rc);
-}
-
-
-size_t usb_serial_write(char *buf, size_t len)
-{
-    return stdio_put_string(
-        buf, len,
-        false /* newline */,
-        false /* cr_translation */);
 }
 
 
@@ -1027,9 +949,9 @@ int main(void)
     init_pins();
 
     while (1) {
-        flush_uart_io();
+        usb_serial_flush();
 
-        while (tud_cdc_connected()) {
+        while (usb_serial_connected()) {
             current_fsm_state = run_norway_state_machine(current_fsm_state);
         }
     }
