@@ -21,6 +21,9 @@ add_executable(NANDway_SB_rp2350b
     NANDway/main.c
 )
 
+target_compile_definitions(NANDway_SB_rp2350b PRIVATE BUILD_VERSION=2)
+include_directories(common)
+
 # Add pico_stdlib library which aggregates commonly used features
 target_link_libraries(NANDway_SB_rp2350b pico_stdlib)
 
@@ -38,7 +41,10 @@ pico_add_extra_outputs(NANDway_SB_rp2350b)
 # rest of your project
 add_executable(NORway_rp2350b
     NORway/main.c
+    common/delay.c
 )
+
+include_directories(common)
 
 # Add pico_stdlib library which aggregates commonly used features
 target_link_libraries(NORway_rp2350b pico_stdlib)

@@ -15,8 +15,9 @@ see file COPYING or http://www.gnu.org/licenses/old-licenses/gpl-2.0.txt
 #include <stdio.h>
 #include "pico/stdlib.h"
 
+#include "delay.h"
+
 #include "hardware/gpio.h"
-#include "hardware/structs/systick.h"
 #include "pico/bootrom.h"
 
 #include "tusb.h"
@@ -120,28 +121,6 @@ enum external_commands_e {
 
 /* Global configuration */
 static bool s_write_verification_enabled = false;
-
-
-/* 8ns per tick -> 13 ticks for 104ns delay */
-#define DELAY_100_NS()  (systick_delay(13))
-/* 8ns per tick -> 25 ticks for 200ns delay */
-#define DELAY_200_NS()  (systick_delay(25))
-
-
-void systick_timer_init(void)
-{
-    // the clock is set to 125 MHz => 1 tick == 8 ns
-    // init SysTick timer
-    systick_hw->csr = 0x05; // enable systick at 1 cycle resolution (8ns)
-    systick_hw->rvr = 0xffff; // 16 bit
-}
-
-
-void systick_delay(uint16_t ticks)
-{
-    uint16_t start = systick_hw->cvr;
-    while((uint16_t)(start-systick_hw->cvr) < ticks); 
-}
 
 
 /*
