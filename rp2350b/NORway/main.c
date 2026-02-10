@@ -16,9 +16,9 @@ see file COPYING or http://www.gnu.org/licenses/old-licenses/gpl-2.0.txt
 #include "pico/stdlib.h"
 
 #include "delay.h"
+#include "bootloader.h"
 
 #include "hardware/gpio.h"
-#include "pico/bootrom.h"
 
 #include "tusb.h"
 
@@ -296,12 +296,6 @@ void WE_HIGH(void)
 bool get_RYBY(void)
 {
     return gpio_get(RYBY_PIN);
-}
-
-
-void __attribute__((noreturn)) enter_bootloader(void)
-{
-    reset_usb_boot(0, 0);
 }
 
 
