@@ -8,7 +8,8 @@ set(PICO_SDK_FETCH_FROM_GIT on)
 # note: this must happen before project()
 include(pico_sdk_import.cmake)
 
-project(NORway_rp2350b)
+# NANDway Signal Booster Build
+project(flashway_rp2350b)
 
 # initialize the Raspberry Pi Pico SDK
 pico_sdk_init()
@@ -16,8 +17,27 @@ pico_sdk_init()
 add_compile_options(-Werror -Wall)
 
 # rest of your project
+add_executable(NANDway_SB_rp2350b
+    NANDway/main.c
+)
+
+# Add pico_stdlib library which aggregates commonly used features
+target_link_libraries(NANDway_SB_rp2350b pico_stdlib)
+
+# Setup SDK features
+pico_enable_stdio_usb(NANDway_SB_rp2350b 1)
+pico_enable_stdio_uart(NANDway_SB_rp2350b 0)
+
+# create map/bin/hex/uf2 file in addition to ELF.
+pico_add_extra_outputs(NANDway_SB_rp2350b)
+
+##############################
+
+# NORway Build
+
+# rest of your project
 add_executable(NORway_rp2350b
-    main.c
+    NORway/main.c
 )
 
 # Add pico_stdlib library which aggregates commonly used features
@@ -30,3 +50,4 @@ pico_enable_stdio_uart(NORway_rp2350b 0)
 # create map/bin/hex/uf2 file in addition to ELF.
 pico_add_extra_outputs(NORway_rp2350b)
 
+##############################
