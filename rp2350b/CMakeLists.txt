@@ -19,6 +19,7 @@ add_compile_options(-Werror -Wall)
 add_library(flashway_common
     common/bootloader.c
     common/delay.c
+    common/mem_utils.c
     common/usb_serial.c
 )
 include_directories(common)
