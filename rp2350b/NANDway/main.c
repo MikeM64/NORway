@@ -128,12 +128,52 @@ typedef struct _nand_info {
 } nand_info;
 
 
+#if BUILD_VERSION == BUILD_DUAL_NAND
+    #error Dual NAND is not yet supported!
+#elif BUILD_VERSION == BUILD_SIGNAL_BOOSTER
+    #define NAND0_IO_PIN_SHIFT (28)
+    #define NAND0_IO_PIN_MASK (0xFFull << 28)
+
+    #define ALL_PIN_MASK (NAND0_IO_PIN_MASK)
+#endif /* BUILD_VERSION */
+
+
+/*
+ * Enable pullups on the NAND IO pins
+ */
+void nand_io_pullups_enable(void)
+{
+    uint32_t i;
+
+    for (i = NAND0_IO_PIN_SHIFT; i < 8; i++) {
+        gpio_set_pulls(i, true /* up */, false /* down */);
+    }
+}
+
+
+/*
+ * Disable pullups on the NAND IO pins
+ */
+void nand_io_pullups_disable(void)
+{
+    uint32_t i;
+
+    for (i = NAND0_IO_PIN_SHIFT; i < 8; i++) {
+        gpio_set_pulls(i, false /* up */, false /* down */);
+    }
+}
+
+
 /*
  * Reset pins to a known good default state
  */
 void init_pins(void)
 {
-    /* TODO */
+    /* Assign all pins to SW I/O */
+    gpio_set_function_masked64(ALL_PIN_MASK, GPIO_FUNC_SIO);
+
+    /* NAND IO Pins are set to output by default */
+    gpio_set_dir_out_masked64(NAND0_IO_PIN_MASK);
 }
 
 
@@ -142,19 +182,9 @@ void init_pins(void)
  */
 void release_pins(void)
 {
-    /* TODO */
-}
+    gpio_set_dir_in_masked64(ALL_PIN_MASK);
 
-
-void gpio_pullups_enable(void)
-{
-    /* TODO */
-}
-
-
-void gpio_pullups_disable(void)
-{
-    /* TODO */
+    nand_io_pullups_disable();
 }
 
 
@@ -186,10 +216,10 @@ enum fsm_states_e run_idle_state(void)
             release_pins();
             break;
         case CMD_PULLUPS_DISABLE:
-            gpio_pullups_disable();
+            nand_io_pullups_disable();
             break;
         case CMD_PULLUPS_ENABLE:
-            gpio_pullups_enable();
+            nand_io_pullups_enable();
             break;
         }
     }
