@@ -47,10 +47,6 @@ enum {
 } cmd_t;
 
 
-enum fsm_states_e {
-    S_IDLE = 0,
-};
-
 /*! \brief NAND flash read page command start. */
 #define NAND_COMMAND_READ1              0x00
 /*! \brief NAND flash read page command end. */
@@ -85,7 +81,7 @@ enum fsm_states_e {
 #define BUF_SIZE_ADDR   3
 
 uint16_t    PAGE_PLUS_RAS_SZ = 0; /* page size + Redundant Area Size */
-uint8_t     IO_PULLUPS = 0xFF;
+bool        IO_PULLUPS = true;
 uint8_t     buf_rw[BUF_SIZE_RW];
 uint8_t     buf_addr[BUF_SIZE_ADDR];
 
@@ -131,11 +127,98 @@ typedef struct _nand_info {
 #if BUILD_VERSION == BUILD_DUAL_NAND
     #error Dual NAND is not yet supported!
 #elif BUILD_VERSION == BUILD_SIGNAL_BOOSTER
-    #define NAND0_IO_PIN_SHIFT (28)
-    #define NAND0_IO_PIN_MASK (0xFFull << 28)
+    #define CONTROL_ALE_PIN_SHIFT   (0)
+    #define CONTROL_ALE_PIN_MASK    (0x1Full << CONTROL_ALE_PIN_SHIFT)
+    #define CONTROL_ALE_PIN_COUNT   (5)
 
-    #define ALL_PIN_MASK (NAND0_IO_PIN_MASK)
+    #define CONTROL_RE_PIN_SHIFT    (15)
+    #define CONTROL_RE_PIN_MASK     (0x1Full << CONTROL_RE_PIN_SHIFT)
+    #define CONTROL_RE_PIN_COUNT    (5)
+
+    #define CONTROL_WE_PIN_SHIFT    (20)
+    #define CONTROL_WE_PIN_MASK     (0x1Full << CONTROL_WE_PIN_SHIFT)
+    #define CONTROL_WE_PIN_COUNT    (5)
+
+    #define NAND0_IO_PIN_SHIFT      (28)
+    #define NAND0_IO_PIN_MASK       (0xFFull << NAND0_IO_PIN_SHIFT)
+    #define NAND0_IO_PIN_COUNT      (8)
+
+    #define NAND0_CONTROL_WPal_PIN  (36)
+    #define NAND0_CONTROL_RYBY_PIN  (37)
+
+    #define NAND0_CONTROL_PIN_SHIFT (36)
+    #define NAND0_CONTROL_PIN_MASK  (0x03ull << NAND0_CONTROL_PIN_SHIFT)
+    #define NAND0_CONTROL_PIN_COUNT (2)
+
+    #define CONTROL_CLE_PIN_SHIFT   (40)
+    #define CONTROL_CLE_PIN_MASK    (0x1Full << CONTROL_CLE_PIN_SHIFT)
+    #define CONTROL_CLE_PIN_COUNT   (5)
+
+    #define ALL_PIN_MASK (CONTROL_ALE_PIN_MASK | \
+                            CONTROL_RE_PIN_MASK | \
+                            CONTROL_WE_PIN_MASK | \
+                            CONTROL_CLE_PIN_MASK | \
+                            NAND0_IO_PIN_MASK | \
+                            NAND0_CONTROL_PIN_MASK)
+
 #endif /* BUILD_VERSION */
+
+
+typedef struct _nand_port {
+    nand_info info;
+
+    uint64_t    io_port_pin_mask;
+    uint64_t    control_pins_mask;
+    uint64_t    control_ale_pin_mask;
+    uint64_t    control_re_pin_mask;
+    uint64_t    control_we_pin_mask;
+    uint64_t    control_cle_pin_mask;
+
+    uint8_t     io_port_pin_shift;
+    uint8_t     control_pins_shift;
+    uint8_t     control_ale_pin_shift;
+    uint8_t     control_re_pin_shift;
+    uint8_t     control_we_pin_shift;
+    uint8_t     control_cle_pin_shift;
+
+    uint8_t     io_port_pin_count;
+    uint8_t     control_pins_count;
+    uint8_t     control_ale_pin_count;
+    uint8_t     control_re_pin_count;
+    uint8_t     control_we_pin_count;
+    uint8_t     control_cle_pin_count;
+} nand_port;
+
+
+#if BUILD_VERSION == BUILD_DUAL_NAND
+    #error Dual NAND is not yet supported!
+#elif BUILD_VERSION == BUILD_SIGNAL_BOOSTER
+    nand_port nand0 = {
+        .io_port_pin_mask = NAND0_IO_PIN_MASK,
+        .io_port_pin_shift = NAND0_IO_PIN_SHIFT,
+        .io_port_pin_count = NAND0_IO_PIN_COUNT,
+
+        .control_pins_mask = NAND0_CONTROL_PIN_MASK,
+        .control_pins_shift = NAND0_CONTROL_PIN_SHIFT,
+        .control_pins_count = NAND0_CONTROL_PIN_COUNT,
+
+        .control_ale_pin_mask = CONTROL_ALE_PIN_MASK,
+        .control_ale_pin_shift = CONTROL_ALE_PIN_SHIFT,
+        .control_ale_pin_count = CONTROL_ALE_PIN_COUNT,
+
+        .control_re_pin_mask = CONTROL_RE_PIN_MASK,
+        .control_re_pin_shift = CONTROL_RE_PIN_SHIFT,
+        .control_re_pin_count = CONTROL_RE_PIN_COUNT,
+
+        .control_we_pin_mask = CONTROL_WE_PIN_MASK,
+        .control_we_pin_shift = CONTROL_WE_PIN_SHIFT,
+        .control_we_pin_count = CONTROL_WE_PIN_COUNT,
+
+        .control_cle_pin_mask = CONTROL_CLE_PIN_MASK,
+        .control_cle_pin_shift = CONTROL_CLE_PIN_SHIFT,
+        .control_cle_pin_count = CONTROL_CLE_PIN_COUNT,
+    };
+#endif
 
 
 /*
@@ -148,6 +231,8 @@ void nand_io_pullups_enable(void)
     for (i = NAND0_IO_PIN_SHIFT; i < 8; i++) {
         gpio_set_pulls(i, true /* up */, false /* down */);
     }
+
+    IO_PULLUPS = true;
 }
 
 
@@ -161,6 +246,8 @@ void nand_io_pullups_disable(void)
     for (i = NAND0_IO_PIN_SHIFT; i < 8; i++) {
         gpio_set_pulls(i, false /* up */, false /* down */);
     }
+
+    IO_PULLUPS = false;
 }
 
 
@@ -188,10 +275,492 @@ void release_pins(void)
 }
 
 
-enum fsm_states_e run_idle_state(void)
+void nand_io_output(nand_port *nandp)
+{
+    gpio_set_dir_out_masked64(nandp->io_port_pin_mask);
+}
+
+
+void nand_control_output(nand_port *nandp)
+{
+    gpio_set_dir_out_masked64(nandp->control_pins_mask);
+}
+
+
+void nand_we_pins_pullup(nand_port *nandp)
+{
+    uint32_t i;
+
+    for (i = nandp->control_we_pin_shift;
+         i < nandp->control_we_pin_shift + nandp->control_we_pin_count;
+         i++) {
+        gpio_set_pulls(i, true /* up */, false /* down */);
+    }
+}
+
+
+void nand_re_pins_pullup(nand_port *nandp)
+{
+    uint32_t i;
+
+    for (i = nandp->control_re_pin_shift;
+         i < nandp->control_re_pin_shift + nandp->control_re_pin_count;
+         i++) {
+        gpio_set_pulls(i, true /* up */, false /* down */);
+    }
+}
+
+
+void nand_ale_pins_pullup(nand_port *nandp)
+{
+    uint32_t i;
+
+    for (i = nandp->control_ale_pin_shift;
+         i < nandp->control_ale_pin_shift + nandp->control_ale_pin_count;
+         i++) {
+        gpio_set_pulls(i, true /* up */, false /* down */);
+    }
+}
+
+
+void nand_cle_pins_pullup(nand_port *nandp)
+{
+    uint32_t i;
+
+    for (i = nandp->control_cle_pin_shift;
+         i < nandp->control_cle_pin_shift + nandp->control_cle_pin_count;
+         i++) {
+        gpio_set_pulls(i, true /* up */, false /* down */);
+    }
+}
+
+
+void ryby_pin_input(void)
+{
+    gpio_set_dir_in_masked64((1ull << NAND0_CONTROL_RYBY_PIN));
+}
+
+
+void ryby_pin_pullup_enable(void)
+{
+    gpio_set_pulls(NAND0_CONTROL_RYBY_PIN, true /* up */, false /* down */);
+}
+
+
+void wpal_pin_pullup_enable(void)
+{
+    gpio_set_pulls(NAND0_CONTROL_WPal_PIN, true /* up */, false /* down */);
+}
+
+
+void nand_ale_high(nand_port *nandp)
+{
+    gpio_put_masked64(
+        nandp->control_ale_pin_mask,
+        (uint64_t)0xFF << nandp->control_ale_pin_shift);
+}
+
+
+void nand_ale_low(nand_port *nandp)
+{
+    gpio_put_masked64(
+        nandp->control_ale_pin_mask,
+        0);
+}
+
+
+void nand_re_low(nand_port *nandp)
+{
+    gpio_put_masked64(
+        nandp->control_re_pin_mask,
+        0);
+}
+
+
+void nand_re_high(nand_port *nandp)
+{
+    gpio_put_masked64(
+        nandp->control_re_pin_mask,
+        (uint64_t)0xFF << nandp->control_re_pin_shift);
+}
+
+
+void nand_io_set(nand_port *nandp, uint8_t data)
+{
+    gpio_put_masked64(
+        nandp->io_port_pin_mask,
+        (uint64_t)data << nandp->io_port_pin_shift);
+}
+
+
+void nand_io_input(nand_port *nandp)
+{
+    gpio_set_dir_in_masked64(nandp->io_port_pin_mask);
+
+    if (IO_PULLUPS) {
+        nand_io_pullups_enable();
+    } else {
+        nand_io_pullups_disable();
+    }
+}
+
+
+void nand_io_read(nand_port *nandp, uint8_t *data_out)
+{
+    uint64_t all_gpio_pins;
+
+    nand_re_low(nandp);
+
+    DELAY_100_NS();
+
+    all_gpio_pins = gpio_get_all64();
+    *data_out = (uint8_t)(all_gpio_pins >> nandp->io_port_pin_shift);
+
+    nand_re_high(nandp);
+}
+
+
+void nand_enable(nand_port *nandp)
+{
+#if BUILD_VERSION == BUILD_DUAL_NAND
+    *(nandp->cont_ddr) = 0xFF;          // all control ports - output
+    *(nandp->cont_ddr) &= ~NAND_CONT_RYBY; /* ready / busy - input */
+
+    *(nandp->cont_port) =   NAND_CONT_WEal |
+                            NAND_CONT_REal |
+                            NAND_CONT_WPal |
+                            NAND_CONT_RYBY; /* input - pull up */
+#elif BUILD_VERSION == BUILD_SIGNAL_BOOSTER
+    nand_control_output(nandp);
+
+    ryby_pin_input();
+
+    /* input - pull up */
+    wpal_pin_pullup_enable();
+    ryby_pin_pullup_enable();
+
+    /* Set WE to output + pullup */
+    gpio_set_dir_out_masked64(CONTROL_WE_PIN_MASK);
+    nand_we_pins_pullup(nandp);
+
+    /* Set RE to output + pullup */
+    gpio_set_dir_out_masked64(CONTROL_RE_PIN_MASK);
+    nand_we_pins_pullup(nandp);
+
+    /* Set ALE to output + pullup */
+    gpio_set_dir_out_masked64(CONTROL_ALE_PIN_MASK);
+    nand_ale_pins_pullup(nandp);
+
+    /* Set CLE to output + pullup */
+    gpio_set_dir_out_masked64(CONTROL_CLE_PIN_MASK);
+    nand_cle_pins_pullup(nandp);
+#endif
+
+    nand_io_output(nandp); // io set as output
+}
+
+
+void nand_toggle_we(nand_port *nandp)
+{
+    gpio_put_masked64(
+        nandp->control_we_pin_mask,
+        0);
+    gpio_put_masked64(
+        nandp->control_we_pin_mask,
+        (uint64_t)0xFF << nandp->control_we_pin_shift);
+}
+
+
+void nand_command(nand_port *nandp, uint8_t command)
+{
+    gpio_put_masked64(
+        nandp->io_port_pin_mask,
+        (uint64_t)command << nandp->io_port_pin_shift);
+    gpio_put_masked64(
+        nandp->control_cle_pin_mask,
+        (uint64_t)0xFF << nandp->control_cle_pin_shift);
+
+    nand_toggle_we(nandp);
+
+    gpio_put_masked64(
+        nandp->control_cle_pin_mask,
+        0);
+}
+
+
+int wait_ryby(nand_port *nandp)
+{
+    /* Should be done within 3 milliseconds for all commands. */
+    volatile uint32_t timeout = 0x2000000; //approx. 3secs
+
+    while (timeout > 0) {
+        if ( gpio_get(NAND0_CONTROL_RYBY_PIN) ) {
+            return 1;
+        }
+        --timeout;
+    }
+
+    return 0;
+}
+
+
+void nand_reset(nand_port *nandp)
+{
+    nand_enable(nandp);
+
+    nand_command(nandp, NAND_COMMAND_RESET);
+
+    wait_ryby(nandp);
+}
+
+
+uint8_t nand_read_id(nand_port *nandp)
+{
+    uint32_t spare_size;
+    uint8_t maker_code;
+    uint8_t device_code;
+    uint8_t chip_data;
+    uint8_t size_data;
+    uint8_t plane_data;
+    uint8_t plane_size;
+    uint8_t block_size;
+
+    nand_enable(nandp);
+
+    nand_command(nandp, NAND_COMMAND_READID);
+
+    /* follow by address - 0 */
+    nand_ale_high(nandp);
+    nand_io_set(nandp, 0x00);
+    nand_ale_low(nandp);
+
+    nand_io_input(nandp);
+    nand_io_read(nandp, &maker_code);
+    nand_io_read(nandp, &device_code);
+    nand_io_read(nandp, &chip_data);
+    nand_io_read(nandp, &size_data);
+    nand_io_read(nandp, &plane_data);
+
+    //Samsung K9F1G08R0A
+    //maker_code = 0xec;
+    //device_code = 0xf1;
+    //chip_data = 0xa0;
+    //size_data = 0x15;
+    //plane_data = 0x40;
+
+    //Samsung K9T1G08U0M
+    //maker_code = 0xec;
+    //device_code = 0x79;
+    //chip_data = 0xa5;
+    //size_data = 0xc0;
+    //plane_data = 0x00; /??
+
+    //Samsung K9F2G08U0M
+    //maker_code = 0xec;
+    //device_code = 0xda;
+    //chip_data = 0xa0; //??
+    //size_data = 0x15;
+    //plane_data = 0x50;
+
+    //Hynix H27UBG8T2A
+    //maker_code = 0xad;
+    //device_code = 0xd7;
+    //chip_data = 0x94;
+    //size_data = 0x9a;
+    //plane_data = 0x74;
+
+    nandp->info.raw_data[0] = maker_code;
+    nandp->info.raw_data[1] = device_code;
+    nandp->info.raw_data[2] = chip_data;
+    nandp->info.raw_data[3] = size_data;
+    nandp->info.raw_data[4] = plane_data;
+
+    nandp->info.maker_code = maker_code;
+    nandp->info.device_code = device_code;
+
+    if ((maker_code == 0xAD) && (device_code == 0xD7)) { // Hynix H27UBG8T2A
+        /* Fill the NAND structure parameters */
+        nandp->info.page_size  = 0x800 << (size_data & 0x03);
+        //nandp->info.page_shift = ctz(nandp->info.page_size);
+        nandp->info.bus_width = 8;
+        nandp->info.num_planes = (1 << ((plane_data >> 2) & 0x03));
+        nandp->info.plane_size = 2048UL * 1024UL * 1024UL;
+
+        block_size = (size_data & 0xB0);
+        /* Store the plane size in bytes. */
+        switch (block_size) {
+            case 0x0:
+                nandp->info.block_size = 128UL * 1024UL;
+            break;
+            case 0x10:
+                nandp->info.block_size = 256UL * 1024UL;
+                break;
+            case 0x20:
+                nandp->info.block_size = 512UL * 1024UL;
+                break;
+            case 0x30:
+                nandp->info.block_size = 768UL * 1024UL;
+                break;
+            case 0x80:
+                nandp->info.block_size = 1024UL * 1024UL;
+                break;
+            case 0x90:
+                nandp->info.block_size = 2048UL * 1024UL;
+                break;
+            default:
+                return 0;
+        }
+
+        spare_size = (size_data >> 2) & 0x03;
+        switch (spare_size) {
+            case 0x0:
+                nandp->info.oob_size = 128;
+                break;
+            case 0x1:
+                nandp->info.oob_size = 224;
+                break;
+            case 0x2:
+                nandp->info.oob_size = 448;
+                break;
+            default:
+                return 0;
+        }
+    }
+    else if ((maker_code == 0xAD) && (device_code == 0x73)) { // Hynix HY27US08281A
+        nandp->info.page_size  = 512;
+        nandp->info.block_size = 32UL * nandp->info.page_size;
+        nandp->info.num_planes = 1;
+        nandp->info.oob_size = 16;
+        nandp->info.plane_size = 1UL << 24;
+        nandp->info.bus_width = 8;
+    }
+    else if ((maker_code == 0xEC) && (device_code == 0x79)) { // Samsung K9T1G08U0M
+        nandp->info.page_size  = 512;
+        nandp->info.block_size = 32UL * nandp->info.page_size;
+        nandp->info.num_planes = 4;
+        nandp->info.oob_size = 16;
+        nandp->info.plane_size = 1UL << 25;
+        nandp->info.bus_width = 8;
+    }
+    else {
+        if ((maker_code == 0xEC) && (device_code == 0xF1)) // Samsung K9F1G08U0A
+            plane_data = 0x40;
+        else if ((maker_code == 0xEC) && (device_code == 0xA1)) // Samsung K9F1G08R0A
+            plane_data = 0x40;
+        else if ((maker_code == 0xEC) && (device_code == 0xDA)) // Samsung K9F2G08U0M
+            plane_data = 0x50;
+
+        /* Fill the NAND structure parameters */
+        nandp->info.page_size  = 0x400 << (size_data & 0x03);
+        //nandp->info.page_shift = ctz(nandp->info.page_size);
+        nandp->info.block_size = (64UL * 1024UL) << ((size_data & 0x30) >> 4);
+
+        nandp->info.num_planes = (1 << ((plane_data >> 2) & 0x03));
+
+        spare_size = (8 << ((size_data & 0x04) >> 2)) * (nandp->info.page_size / 512);
+        switch (spare_size) {
+            case 16:
+            case 64:
+                nandp->info.oob_size = spare_size;
+                break;
+            default:
+                return 0;
+        }
+
+        plane_size = (plane_data >> 4) & 0x07;
+        /* Store the plane size in bytes. */
+        switch (plane_size) {
+            case 0x0:
+                nandp->info.plane_size = 1UL << 23;
+                break;
+            case 0x1:
+                nandp->info.plane_size = 1UL << 24;
+                break;
+            case 0x2:
+                nandp->info.plane_size = 1UL << 25;
+                break;
+            case 0x3:
+                nandp->info.plane_size = 1UL << 26;
+                break;
+            case 0x4:
+                nandp->info.plane_size = 1UL << 27;
+                break;
+            case 0x5:
+                nandp->info.plane_size = 1UL << 28;
+                break;
+            case 0x6:
+                nandp->info.plane_size = 1UL << 29;
+                break;
+            case 0x7:
+                nandp->info.plane_size = 1UL << 30;
+                break;
+            default:
+                return 0;
+        }
+
+        if ((size_data & 0x40) == 0) {
+            nandp->info.bus_width = 8;
+        } else {
+            nandp->info.bus_width = 16;
+        }
+    }
+
+    nandp->info.num_blocks = (uint32_t)nandp->info.num_planes * (nandp->info.plane_size / nandp->info.block_size);
+    nandp->info.pages_per_block = nandp->info.block_size / nandp->info.page_size;
+    //nandp->info.block_shift = ctz(nandp->info.pages_per_block);
+
+    PAGE_PLUS_RAS_SZ = nandp->info.page_size + nandp->info.oob_size;
+
+    return 1;
+}
+
+
+void handle_read_id(nand_port *nand) {
+    nand_reset(nand);
+    if (nand_read_id(nand)) {
+        //25 bytes
+        usb_serial_putchar(nand->info.raw_data[0]); //maker_code
+        usb_serial_putchar(nand->info.raw_data[1]); //device_code
+        usb_serial_putchar(nand->info.raw_data[2]);
+        usb_serial_putchar(nand->info.raw_data[3]);
+        usb_serial_putchar(nand->info.raw_data[4]);
+        usb_serial_putchar((nand->info.page_size >> 24) & 0xFF);
+        usb_serial_putchar((nand->info.page_size >> 16) & 0xFF);
+        usb_serial_putchar((nand->info.page_size >> 8) & 0xFF);
+        usb_serial_putchar(nand->info.page_size & 0xFF);
+        usb_serial_putchar((nand->info.oob_size >> 8) & 0xFF);
+        usb_serial_putchar(nand->info.oob_size & 0xFF);
+        usb_serial_putchar(nand->info.bus_width);
+        usb_serial_putchar((nand->info.block_size >> 24) & 0xFF);
+        usb_serial_putchar((nand->info.block_size >> 16) & 0xFF);
+        usb_serial_putchar((nand->info.block_size >> 8) & 0xFF);
+        usb_serial_putchar(nand->info.block_size & 0xFF);
+        usb_serial_putchar((nand->info.num_blocks >> 24) & 0xFF);
+        usb_serial_putchar((nand->info.num_blocks >> 16) & 0xFF);
+        usb_serial_putchar((nand->info.num_blocks >> 8) & 0xFF);
+        usb_serial_putchar(nand->info.num_blocks & 0xFF);
+        usb_serial_putchar(nand->info.num_planes);
+        usb_serial_putchar((nand->info.plane_size >> 24) & 0xFF);
+        usb_serial_putchar((nand->info.plane_size >> 16) & 0xFF);
+        usb_serial_putchar((nand->info.plane_size >> 8) & 0xFF);
+        usb_serial_putchar(nand->info.plane_size & 0xFF);
+    }
+    else {
+        usb_serial_putchar(nand->info.raw_data[0]); //maker_code
+        usb_serial_putchar(nand->info.raw_data[1]); //device_code
+        usb_serial_putchar(nand->info.raw_data[2]);
+        usb_serial_putchar(nand->info.raw_data[3]);
+        usb_serial_putchar(nand->info.raw_data[4]);
+        for (uint8_t i = 0; i < 20; ++i) {
+            usb_serial_putchar(0);
+        }
+    }
+}
+
+
+void run_commands(void)
 {
     int                 rc;
-    enum fsm_states_e   next_state = S_IDLE;
 
     rc = usb_serial_getchar();
 
@@ -221,31 +790,20 @@ enum fsm_states_e run_idle_state(void)
         case CMD_PULLUPS_ENABLE:
             nand_io_pullups_enable();
             break;
+        case CMD_NAND0_ID:
+            usb_serial_putchar('Y');
+            handle_read_id(&nand0);
+            #if BUILD_VERSION == BUILD_SIGNAL_BOOSTER
+                release_pins();
+            #endif
+            break;
         }
     }
-
-    return (next_state);
-}
-
-
-enum fsm_states_e run_nandway_state_machine(enum fsm_states_e current_state)
-{
-    enum fsm_states_e next_state = S_IDLE;
-
-    switch (current_state) {
-    case S_IDLE:
-        next_state = run_idle_state();
-        break;
-    }
-
-    return (next_state);
 }
 
 
 int main(void)
 {
-    enum fsm_states_e   current_fsm_state = S_IDLE;
-
     stdio_init_all();
     systick_timer_init();
 
@@ -257,7 +815,7 @@ int main(void)
         usb_serial_flush();
 
         while (usb_serial_connected()) {
-            current_fsm_state = run_nandway_state_machine(current_fsm_state);
+            run_commands();
         }
     }
 
