@@ -762,9 +762,9 @@ void nand_read_page(nand_port *nandp, char *buf_addr) {
     size_t      i;
     char        buf_rw[BUF_SIZE_RW];
     uint32_t    saved_interrupts;
-    
+
     nand_enable(nandp);
-    
+
     /* read command */
     nand_command(nandp, NAND_COMMAND_READ1);
 
@@ -787,7 +787,7 @@ void nand_read_page(nand_port *nandp, char *buf_addr) {
         nand_io_set(nandp, buf_addr[0]);
         nand_io_set(nandp, buf_addr[1]);
         nand_io_set(nandp, buf_addr[2]);
-    }   
+    }
     nand_ale_low(nandp);
 
     if ((nandp->info.maker_code == 0xAD) && (nandp->info.device_code == 0x73))
@@ -796,21 +796,21 @@ void nand_read_page(nand_port *nandp, char *buf_addr) {
         DELAY_100_NS();
     else
         nand_command(nandp, NAND_COMMAND_READ2);
-    
+
     nand_io_input(nandp);
 
     saved_interrupts = save_and_disable_interrupts();
-    
+
     /* wait for the nand to read this page to the internal page register */
     wait_ryby(nandp);
-    
+
     for (uint8_t k = 0; k < PAGE_PLUS_RAS_SZ / BUF_SIZE_RW; ++k) {
         for (i = 0; i < BUF_SIZE_RW; ++i) {
             nand_io_read(nandp, &buf_rw[i]);
         }
         usb_serial_write(buf_rw, BUF_SIZE_RW);
     }
-        
+
     uint16_t rest = PAGE_PLUS_RAS_SZ - ((PAGE_PLUS_RAS_SZ / BUF_SIZE_RW) * BUF_SIZE_RW);
     for (i = 0; i < rest; ++i) {
         nand_io_read(nandp, &buf_rw[i]);
@@ -834,12 +834,127 @@ void handle_read_page(nand_port *nand) {
 
         i += rc;
     }
-    
-    if (i < sizeof(buf_addr)) {    // timeout
+
+    if (i < sizeof(buf_addr)) {
         usb_serial_putchar('R');
     } else {
         usb_serial_putchar('K');
         nand_read_page(nand, buf_addr);
+    }
+}
+
+
+uint8_t nand_status(nand_port *nandp) {
+    char status;
+
+    nand_command(nandp, NAND_COMMAND_STATUS);
+
+    nand_io_input(nandp);
+
+    nand_io_read(nandp, &status);
+
+    nand_io_output(nandp);
+
+    return status;
+}
+
+
+void nand_busy_wait(nand_port *nandp)
+{
+    uint8_t status;
+
+    do {
+        sleep_us(5);
+        status = nand_status(nandp);
+    } while (!(status & NAND_STATUS_READY));
+}
+
+
+int nand_write_page(nand_port *nandp, char *buf_addr) {
+    uint16_t i;
+    int16_t in_data;
+
+    nand_enable(nandp);
+
+    /* Serial Data Input command */
+    /* CLE - high & CE# - low */
+    nand_command(nandp, NAND_COMMAND_PAGEPROG1);
+
+    /* address */
+    /* ALE on & CLE off */
+    nand_ale_high(nandp);
+    if ((nandp->info.maker_code == 0xAD) && (nandp->info.device_code == 0x73)) {
+        nand_io_set(nandp, 0);
+        nand_io_set(nandp, buf_addr[0]);
+        nand_io_set(nandp, buf_addr[1]);
+    }
+    else if ((nandp->info.maker_code == 0xEC) && (nandp->info.device_code == 0x79)) { // Samsung K9T1G08U0M
+        nand_io_set(nandp, 0);
+        nand_io_set(nandp, buf_addr[0]);
+        nand_io_set(nandp, buf_addr[1]);
+        nand_io_set(nandp, buf_addr[2]);
+    }
+    else {
+        nand_io_set(nandp, 0);
+        nand_io_set(nandp, 0);
+        nand_io_set(nandp, buf_addr[0]);
+        nand_io_set(nandp, buf_addr[1]);
+        nand_io_set(nandp, buf_addr[2]);
+    }
+    nand_ale_low(nandp);
+
+    /*
+     * TODO: This might be a good target for future optimization
+     */
+    for (i = 0; i < PAGE_PLUS_RAS_SZ; i++) {
+        if ((in_data = usb_serial_getchar()) != -1) {
+            nand_io_set(nandp, in_data);
+        }
+        else {
+            break;
+        }
+    }
+
+    /* Page Program confirm command */
+    nand_command(nandp, NAND_COMMAND_PAGEPROG2);
+
+    if (i < PAGE_PLUS_RAS_SZ) { // timeout
+        return -1;      // and exit
+    }
+
+    /* wait for the internal controller to finish the program command
+        TBD - up to 200us */
+    nand_busy_wait(nandp);
+
+    return !(nand_status(nandp) & NAND_STATUS_FAIL);
+}
+
+
+void handle_write_page(nand_port *nand) {
+    size_t  i = 0;
+    int     rc = 0;
+    char    buf_addr[BUF_SIZE_ADDR];
+
+    while (i < sizeof(buf_addr) && rc != PICO_ERROR_TIMEOUT) {
+        rc = usb_serial_getbuf(&buf_addr[i], 128);
+        if (rc == PICO_ERROR_TIMEOUT) {
+            usb_serial_putchar('T');
+        }
+
+        i += rc;
+    }
+
+    if (i < sizeof(buf_addr)) {
+        usb_serial_putchar('R');
+    } else {
+        rc = nand_write_page(nand, buf_addr);
+        if (rc > 0) {
+            usb_serial_putchar('K');
+        } else if (rc < 0) {
+            usb_serial_putchar('R');
+        } else {
+            usb_serial_putchar('V');
+        }
     }
 }
 
@@ -885,6 +1000,12 @@ void run_commands(void)
             break;
         case CMD_NAND0_READPAGE:
             handle_read_page(&nand0);
+            #if BUILD_VERSION == BUILD_SIGNAL_BOOSTER
+                release_pins();
+            #endif
+            break;
+        case CMD_NAND0_WRITEPAGE:
+            handle_write_page(&nand0);
             #if BUILD_VERSION == BUILD_SIGNAL_BOOSTER
                 release_pins();
             #endif
