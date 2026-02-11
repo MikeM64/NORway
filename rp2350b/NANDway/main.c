@@ -127,32 +127,32 @@ typedef struct _nand_info {
 #if BUILD_VERSION == BUILD_DUAL_NAND
     #error Dual NAND is not yet supported!
 #elif BUILD_VERSION == BUILD_SIGNAL_BOOSTER
-    #define CONTROL_ALE_PIN_SHIFT   (0)
-    #define CONTROL_ALE_PIN_MASK    (0x1Full << CONTROL_ALE_PIN_SHIFT)
-    #define CONTROL_ALE_PIN_COUNT   (5)
+    #define NAND0_CONTROL_WPal_PIN  (0)
+    #define NAND0_CONTROL_RYBY_PIN  (1)
 
-    #define CONTROL_RE_PIN_SHIFT    (15)
-    #define CONTROL_RE_PIN_MASK     (0x1Full << CONTROL_RE_PIN_SHIFT)
-    #define CONTROL_RE_PIN_COUNT    (5)
-
-    #define CONTROL_WE_PIN_SHIFT    (20)
-    #define CONTROL_WE_PIN_MASK     (0x1Full << CONTROL_WE_PIN_SHIFT)
-    #define CONTROL_WE_PIN_COUNT    (5)
-
-    #define NAND0_IO_PIN_SHIFT      (28)
-    #define NAND0_IO_PIN_MASK       (0xFFull << NAND0_IO_PIN_SHIFT)
-    #define NAND0_IO_PIN_COUNT      (8)
-
-    #define NAND0_CONTROL_WPal_PIN  (36)
-    #define NAND0_CONTROL_RYBY_PIN  (37)
-
-    #define NAND0_CONTROL_PIN_SHIFT (36)
+    #define NAND0_CONTROL_PIN_SHIFT (0)
     #define NAND0_CONTROL_PIN_MASK  (0x03ull << NAND0_CONTROL_PIN_SHIFT)
     #define NAND0_CONTROL_PIN_COUNT (2)
 
-    #define CONTROL_CLE_PIN_SHIFT   (40)
-    #define CONTROL_CLE_PIN_MASK    (0x1Full << CONTROL_CLE_PIN_SHIFT)
-    #define CONTROL_CLE_PIN_COUNT   (5)
+    #define CONTROL_ALE_PIN_SHIFT   (2)
+    #define CONTROL_ALE_PIN_MASK    (0x0Full << CONTROL_ALE_PIN_SHIFT)
+    #define CONTROL_ALE_PIN_COUNT   (4)
+
+    #define CONTROL_RE_PIN_SHIFT    (6)
+    #define CONTROL_RE_PIN_MASK     (0x0Full << CONTROL_RE_PIN_SHIFT)
+    #define CONTROL_RE_PIN_COUNT    (4)
+
+    #define CONTROL_WE_PIN_SHIFT    (20)
+    #define CONTROL_WE_PIN_MASK     (0x0Full << CONTROL_WE_PIN_SHIFT)
+    #define CONTROL_WE_PIN_COUNT    (4)
+
+    #define CONTROL_CLE_PIN_SHIFT   (10)
+    #define CONTROL_CLE_PIN_MASK    (0x0Full << CONTROL_CLE_PIN_SHIFT)
+    #define CONTROL_CLE_PIN_COUNT   (4)
+
+    #define NAND0_IO_PIN_SHIFT      (14)
+    #define NAND0_IO_PIN_MASK       (0xFFull << NAND0_IO_PIN_SHIFT)
+    #define NAND0_IO_PIN_COUNT      (8)
 
     #define ALL_PIN_MASK (CONTROL_ALE_PIN_MASK | \
                             CONTROL_RE_PIN_MASK | \
