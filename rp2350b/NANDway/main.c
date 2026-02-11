@@ -959,6 +959,71 @@ void handle_write_page(nand_port *nand) {
 }
 
 
+int nand_erase_block(nand_port *nandp, char *buf_addr) {
+    nand_enable(nandp);
+
+    /* block erase setup command */
+    nand_command(nandp, NAND_COMMAND_ERASE1);
+
+    /* block address */
+    /* ALE on & CLE off */
+    nand_ale_high(nandp);
+    if ((nandp->info.maker_code == 0xAD) && (nandp->info.device_code == 0x73)) {
+        nand_io_set(nandp, buf_addr[0]);
+        nand_io_set(nandp, buf_addr[1]);
+    }
+    else {
+        nand_io_set(nandp, buf_addr[0]);
+        nand_io_set(nandp, buf_addr[1]);
+        nand_io_set(nandp, buf_addr[2]);
+    }
+    nand_ale_low(nandp);
+
+    /* block erase confirm command */
+    nand_command(nandp, NAND_COMMAND_ERASE2);
+
+    if (!(nand_status(nandp) & NAND_STATUS_NOT_PROTECTED)) {
+        return -1;
+    }
+
+    /* wait for the internal controller to finish the erase command
+        TBD - up to 2ms */
+    nand_busy_wait(nandp);
+
+    return !(nand_status(nandp) & NAND_STATUS_FAIL);
+}
+
+
+void handle_erase_block(nand_port *nand) {
+    size_t  i = 0;
+    int     rc = 0;
+    char    buf_addr[BUF_SIZE_ADDR];
+
+    while (i < sizeof(buf_addr) && rc != PICO_ERROR_TIMEOUT) {
+        rc = usb_serial_getbuf(&buf_addr[i], 128);
+        if (rc == PICO_ERROR_TIMEOUT) {
+            usb_serial_putchar('T');
+        }
+
+        i += rc;
+    }
+
+    if (i < sizeof(buf_addr)) {
+        usb_serial_putchar('R');
+    } else {
+        rc = nand_erase_block(nand, buf_addr);
+        if (rc > 0) {
+            usb_serial_putchar('K');
+        } else if (rc < 0) {
+            usb_serial_putchar('P');
+        } else {
+            usb_serial_putchar('V');
+        }
+    }
+}
+
+
+
 void run_commands(void)
 {
     int                 rc;
@@ -1006,6 +1071,12 @@ void run_commands(void)
             break;
         case CMD_NAND0_WRITEPAGE:
             handle_write_page(&nand0);
+            #if BUILD_VERSION == BUILD_SIGNAL_BOOSTER
+                release_pins();
+            #endif
+            break;
+        case CMD_NAND0_ERASEBLOCK:
+            handle_erase_block(&nand0);
             #if BUILD_VERSION == BUILD_SIGNAL_BOOSTER
                 release_pins();
             #endif
