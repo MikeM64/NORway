@@ -797,6 +797,29 @@ void run_commands(void)
                 release_pins();
             #endif
             break;
+        case CMD_NAND1_ID:
+            #if BUILD_VERSION == BUILD_DUAL_NAND
+                usb_serial_putchar('Y');
+                handle_read_id(&nand1);
+            #elif BUILD_VERSION == BUILD_SIGNAL_BOOSTER
+                usb_serial_putchar('N');
+            #endif
+            break;
+        case CMD_NAND1_READPAGE:
+            #if BUILD_VERSION == BUILD_DUAL_NAND
+                handle_read_page(&nand1);
+            #endif
+            break;
+        case CMD_NAND1_WRITEPAGE:
+            #if BUILD_VERSION == BUILD_DUAL_NAND
+                handle_write_page(&nand1);
+            #endif
+            break;
+        case CMD_NAND1_ERASEBLOCK:
+            #if BUILD_VERSION == BUILD_DUAL_NAND
+                handle_erase_block(&nand1);
+            #endif
+            break;
         }
     }
 }
