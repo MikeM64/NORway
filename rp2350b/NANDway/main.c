@@ -17,6 +17,8 @@ see file COPYING or http://www.gnu.org/licenses/old-licenses/gpl-2.0.txt
 #include "mem_utils.h"
 #include "usb_serial.h"
 
+#include "hardware/sync.h"
+
 #define VERSION_MAJOR           0
 #define VERSION_MINOR           65
 
@@ -82,8 +84,6 @@ enum {
 
 uint16_t    PAGE_PLUS_RAS_SZ = 0; /* page size + Redundant Area Size */
 bool        IO_PULLUPS = true;
-uint8_t     buf_rw[BUF_SIZE_RW];
-uint8_t     buf_addr[BUF_SIZE_ADDR];
 
 /*! \brief NAND flash information about maker, device, size and timing.
 */
@@ -385,7 +385,7 @@ void nand_re_high(nand_port *nandp)
 }
 
 
-void nand_io_set(nand_port *nandp, uint8_t data)
+void nand_io_set(nand_port *nandp, char data)
 {
     gpio_put_masked64(
         nandp->io_port_pin_mask,
@@ -405,7 +405,7 @@ void nand_io_input(nand_port *nandp)
 }
 
 
-void nand_io_read(nand_port *nandp, uint8_t *data_out)
+void nand_io_read(nand_port *nandp, char *data_out)
 {
     uint64_t all_gpio_pins;
 
@@ -414,7 +414,7 @@ void nand_io_read(nand_port *nandp, uint8_t *data_out)
     DELAY_100_NS();
 
     all_gpio_pins = gpio_get_all64();
-    *data_out = (uint8_t)(all_gpio_pins >> nandp->io_port_pin_shift);
+    *data_out = (char)(all_gpio_pins >> nandp->io_port_pin_shift);
 
     nand_re_high(nandp);
 }
@@ -517,12 +517,12 @@ void nand_reset(nand_port *nandp)
 uint8_t nand_read_id(nand_port *nandp)
 {
     uint32_t spare_size;
-    uint8_t maker_code;
-    uint8_t device_code;
-    uint8_t chip_data;
-    uint8_t size_data;
-    uint8_t plane_data;
-    uint8_t plane_size;
+    char maker_code;
+    char device_code;
+    char chip_data;
+    char size_data;
+    char plane_data;
+    char plane_size;
     uint8_t block_size;
 
     nand_enable(nandp);
@@ -758,6 +758,92 @@ void handle_read_id(nand_port *nand) {
 }
 
 
+void nand_read_page(nand_port *nandp, char *buf_addr) {
+    size_t      i;
+    char        buf_rw[BUF_SIZE_RW];
+    uint32_t    saved_interrupts;
+    
+    nand_enable(nandp);
+    
+    /* read command */
+    nand_command(nandp, NAND_COMMAND_READ1);
+
+    /* address */
+    nand_ale_high(nandp);
+    if ((nandp->info.maker_code == 0xAD) && (nandp->info.device_code == 0x73)) {
+        nand_io_set(nandp, 0);
+        nand_io_set(nandp, buf_addr[0]);
+        nand_io_set(nandp, buf_addr[1]);
+    }
+    else if ((nandp->info.maker_code == 0xEC) && (nandp->info.device_code == 0x79)) { // Samsung K9T1G08U0M
+        nand_io_set(nandp, 0);
+        nand_io_set(nandp, buf_addr[0]);
+        nand_io_set(nandp, buf_addr[1]);
+        nand_io_set(nandp, buf_addr[2]);
+    }
+    else {
+        nand_io_set(nandp, 0);
+        nand_io_set(nandp, 0);
+        nand_io_set(nandp, buf_addr[0]);
+        nand_io_set(nandp, buf_addr[1]);
+        nand_io_set(nandp, buf_addr[2]);
+    }   
+    nand_ale_low(nandp);
+
+    if ((nandp->info.maker_code == 0xAD) && (nandp->info.device_code == 0x73))
+        DELAY_100_NS();
+    else if ((nandp->info.maker_code == 0xEC) && (nandp->info.device_code == 0x79)) // Samsung K9T1G08U0M
+        DELAY_100_NS();
+    else
+        nand_command(nandp, NAND_COMMAND_READ2);
+    
+    nand_io_input(nandp);
+
+    saved_interrupts = save_and_disable_interrupts();
+    
+    /* wait for the nand to read this page to the internal page register */
+    wait_ryby(nandp);
+    
+    for (uint8_t k = 0; k < PAGE_PLUS_RAS_SZ / BUF_SIZE_RW; ++k) {
+        for (i = 0; i < BUF_SIZE_RW; ++i) {
+            nand_io_read(nandp, &buf_rw[i]);
+        }
+        usb_serial_write(buf_rw, BUF_SIZE_RW);
+    }
+        
+    uint16_t rest = PAGE_PLUS_RAS_SZ - ((PAGE_PLUS_RAS_SZ / BUF_SIZE_RW) * BUF_SIZE_RW);
+    for (i = 0; i < rest; ++i) {
+        nand_io_read(nandp, &buf_rw[i]);
+    }
+    usb_serial_write(buf_rw, rest);
+
+    restore_interrupts(saved_interrupts);
+}
+
+
+void handle_read_page(nand_port *nand) {
+    size_t  i = 0;
+    int     rc = 0;
+    char    buf_addr[BUF_SIZE_ADDR];
+
+    while (i < sizeof(buf_addr) && rc != PICO_ERROR_TIMEOUT) {
+        rc = usb_serial_getbuf(&buf_addr[i], 128);
+        if (rc == PICO_ERROR_TIMEOUT) {
+            usb_serial_putchar('T');
+        }
+
+        i += rc;
+    }
+    
+    if (i < sizeof(buf_addr)) {    // timeout
+        usb_serial_putchar('R');
+    } else {
+        usb_serial_putchar('K');
+        nand_read_page(nand, buf_addr);
+    }
+}
+
+
 void run_commands(void)
 {
     int                 rc;
@@ -793,6 +879,12 @@ void run_commands(void)
         case CMD_NAND0_ID:
             usb_serial_putchar('Y');
             handle_read_id(&nand0);
+            #if BUILD_VERSION == BUILD_SIGNAL_BOOSTER
+                release_pins();
+            #endif
+            break;
+        case CMD_NAND0_READPAGE:
+            handle_read_page(&nand0);
             #if BUILD_VERSION == BUILD_SIGNAL_BOOSTER
                 release_pins();
             #endif
