@@ -146,6 +146,18 @@ void release_pins(void)
 }
 
 
+void gpio_pullups_enable(void)
+{
+    /* TODO */
+}
+
+
+void gpio_pullups_disable(void)
+{
+    /* TODO */
+}
+
+
 enum fsm_states_e run_idle_state(void)
 {
     int                 rc;
@@ -172,6 +184,12 @@ enum fsm_states_e run_idle_state(void)
             break;
         case CMD_IO_RELEASE:
             release_pins();
+            break;
+        case CMD_PULLUPS_DISABLE:
+            gpio_pullups_disable();
+            break;
+        case CMD_PULLUPS_ENABLE:
+            gpio_pullups_enable();
             break;
         }
     }
