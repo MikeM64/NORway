@@ -167,6 +167,12 @@ enum fsm_states_e run_idle_state(void)
         case CMD_BOOTLOADER:
             enter_bootloader();
             break;
+        case CMD_IO_LOCK:
+            init_pins();
+            break;
+        case CMD_IO_RELEASE:
+            release_pins();
+            break;
         }
     }
 
