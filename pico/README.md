@@ -8,11 +8,26 @@ This is a port of NORway (and eventually NANDway Dual NAND/SPIway) for the RPi P
 ## Mac OS
 `brew install arm-eabi-none-gcc cmake`
 
+# Windows
+- Install VSCode/VSCodium
+- Install Git for Windows (https://git-scm.com/install/windows)
+
 # Build Instructions
+## Mac OS/Linux
 1. `cd pico`
 2. `cmake -S . -B build`
 3. `cd build`
 4. `make -j8`
+
+## Windows
+1. Install the "Raspberry Pi Pico" VSCode Extension
+2. Clone this repository
+3. Checkout the branch `dev/rp2350b`
+4. "RPi Pico Extension" -> Import Project -> Select the `pico` folder
+5. Click "Import" (Install the CMake Project if prompted)
+6. A new window will open once the project is imported. Allow it access to the parent git repository when prompted
+7. "RPi Pico Extension" -> Compile Project
+8. Build targets will be generated under the `pico/build` directory
 
 # Flashing Instructions
 - Hold the BOOT button while plugging the pico's USB cable in
