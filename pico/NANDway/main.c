@@ -832,7 +832,7 @@ void handle_read_page(nand_port *nand) {
     char    buf_addr[BUF_SIZE_ADDR];
 
     while (i < sizeof(buf_addr) && rc != PICO_ERROR_TIMEOUT) {
-        rc = usb_serial_getbuf(&buf_addr[i], 128);
+        rc = usb_serial_getbuf(&buf_addr[i], sizeof(buf_addr));
         if (rc == PICO_ERROR_TIMEOUT) {
             usb_serial_putchar('T');
         }
@@ -941,7 +941,7 @@ void handle_write_page(nand_port *nand) {
     char    buf_addr[BUF_SIZE_ADDR];
 
     while (i < sizeof(buf_addr) && rc != PICO_ERROR_TIMEOUT) {
-        rc = usb_serial_getbuf(&buf_addr[i], 128);
+        rc = usb_serial_getbuf(&buf_addr[i], sizeof(buf_addr));
         if (rc == PICO_ERROR_TIMEOUT) {
             usb_serial_putchar('T');
         }
@@ -1005,7 +1005,7 @@ void handle_erase_block(nand_port *nand) {
     char    buf_addr[BUF_SIZE_ADDR];
 
     while (i < sizeof(buf_addr) && rc != PICO_ERROR_TIMEOUT) {
-        rc = usb_serial_getbuf(&buf_addr[i], 128);
+        rc = usb_serial_getbuf(&buf_addr[i], sizeof(buf_addr));
         if (rc == PICO_ERROR_TIMEOUT) {
             usb_serial_putchar('T');
         }
@@ -1026,7 +1026,6 @@ void handle_erase_block(nand_port *nand) {
         }
     }
 }
-
 
 
 void run_commands(void)
