@@ -15,6 +15,8 @@
 
 import serial, time, datetime, sys, struct
 
+import binascii
+
 class TeensySerialError(Exception):
 	pass
 
@@ -37,21 +39,26 @@ class TeensySerial(object):
 		self.obuf += s
 		while len(self.obuf) > self.BUFSIZE:
 			self.ser.write(self.obuf[:self.BUFSIZE])
+            print("TX: {}".format(binascii.hexlify(self.obuf[:self.BUFSIZE])))
 			self.obuf = self.obuf[self.BUFSIZE:]
 
 	def flush(self):
 		if len(self.obuf):
 			self.ser.write(self.obuf)
+            print("TX: {}".format(binascii.hexlify(self.obuf)))
 			self.ser.flush()
 			self.obuf = ""
 
 	def read(self, size):
 		self.flush()
 		data = self.ser.read(size)
+        print("RX: {}".format(binascii.hexlify(data)))
 		return data
 
 	def readbyte(self):
-		return ord(self.read(1))
+        data = ord(self.read(1))
+        print("RX: {}".format(binascii.hexlify(data)))
+		return data
 
 	def close(self):
 		print
